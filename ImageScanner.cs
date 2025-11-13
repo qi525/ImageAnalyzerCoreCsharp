@@ -6,8 +6,10 @@ using System.IO; // System.IO.Directory 现需要显式使用
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using System.Threading; // [多线程支持] 用于原子操作 Interlocked
 using System.Collections.Concurrent; 
 using static System.Console; 
+using System.Diagnostics; // [进度条支持] 引入 Stopwatch
 
 // [核心修改] 引入 MetadataExtractor 库
 using MetadataExtractor; 
@@ -40,14 +42,17 @@ namespace ImageAnalyzerCore
     public class ImageScanner
     {
         private readonly ConcurrentDictionary<string, int> _statusCounts = new ConcurrentDictionary<string, int>();
+        private int _processedCount = 0; // 用于实时进度条的原子计数器
 
         /// <summary>
         /// 递归扫描并提取元数据。
         /// </summary>
         public List<ImageInfo> ScanAndExtractInfo(string rootFolder)
         {
+            var stopwatch = Stopwatch.StartNew(); // 启动计时器
             var imagePaths = new ConcurrentBag<string>();
             _statusCounts.Clear(); 
+            _processedCount = 0; // 重置计数器
 
             // 显式使用 System.IO.Directory
             if (!System.IO.Directory.Exists(rootFolder)) 
@@ -85,20 +90,60 @@ namespace ImageAnalyzerCore
 
             var imageData = new ConcurrentBag<ImageInfo>();
             
-            WriteLine($"检测到 {totalImages} 个图片文件。使用 {AnalyzerConfig.MaxConcurrentWorkers} 个线程并行扫描元数据...");
+            WriteLine($"\n[INFO] 检测到 {totalImages} 个图片文件。使用 {AnalyzerConfig.MaxConcurrentWorkers} 个线程并行扫描元数据...");
 
+            // [多线程实现] 使用 Parallel.ForEach 进行并行处理
             Parallel.ForEach(imagePaths, new ParallelOptions { MaxDegreeOfParallelism = AnalyzerConfig.MaxConcurrentWorkers }, filePath =>
             {
                 var result = ProcessSingleImage(filePath);
                 imageData.Add(result);
+
+                // [进度条逻辑] 安全地递增计数器并更新进度条
+                int current = Interlocked.Increment(ref _processedCount);
+                
+                // 每处理10个更新一次，或者处理完最后一个更新，或者处理量小于10时，每处理1个更新一次。
+                if (current % 10 == 0 || current == totalImages || totalImages <= 10) 
+                {
+                    // --- 实时计算指标 ---
+                    TimeSpan elapsed = stopwatch.Elapsed;
+                    double percentage = (double)current / totalImages * 100;
+                    
+                    // 速度 (items/second)
+                    // 确保 elapsed.TotalSeconds 不为 0 以防除零
+                    double speed = elapsed.TotalSeconds > 0 ? current / elapsed.TotalSeconds : 0.0; 
+                    
+                    // 剩余时间估算 (ETA)
+                    TimeSpan eta = TimeSpan.Zero;
+                    if (speed > 0)
+                    {
+                        eta = TimeSpan.FromSeconds((totalImages - current) / speed);
+                    }
+                    
+                    // 在并发环境中安全读取计数
+                    int successCount = _statusCounts.GetValueOrDefault("成功提取", 0);
+                    int failureCount = _statusCounts.Where(kv => kv.Key.StartsWith("失败")).Sum(kv => kv.Value);
+                    
+                    // 使用 \r 回到行首，实现覆盖更新，模拟进度条
+                    // 格式：[Progress] X/Y (Z%) | Speed files/s | 耗时: HH:mm:ss | 预计剩余: HH:mm:ss | 成功: A | 失败: B
+                    Write($"\r[Progress] {current}/{totalImages} ({percentage:F1}%) | {speed:F2} files/s | 耗时: {elapsed:hh\\:mm\\:ss} | 预计剩余: {eta:hh\\:mm\\:ss} | 成功: {successCount} | 失败: {failureCount}");
+                }
             });
+            
+            // 确保处理完成后，进度条显示 100% 并换行
+            if (totalImages > 0)
+            {
+                stopwatch.Stop(); // 停止计时
+                TimeSpan finalElapsed = stopwatch.Elapsed;
+                // 最终状态行，确保打印完整的进度和总耗时
+                WriteLine($"\r[Progress] 扫描完成！ {totalImages}/{totalImages} (100.0%) | 总耗时: {finalElapsed:hh\\:mm\\:ss} | 成功: {_statusCounts.GetValueOrDefault("成功提取", 0)} | 失败: {_statusCounts.Where(kv => kv.Key.StartsWith("失败")).Sum(kv => kv.Value)}");
+            }
 
             var finalResults = imageData.ToList();
             
             int successCount = _statusCounts.GetValueOrDefault("成功提取", 0);
             int failureCount = _statusCounts.Where(kv => kv.Key.StartsWith("失败")).Sum(kv => kv.Value);
             
-            WriteLine("\n--- 图片扫描与元数据提取完成 ---");
+            WriteLine("--- 图片扫描与元数据提取统计 ---");
             WriteLine($"总任务量: {totalImages}");
             WriteLine($"成功处理量: {successCount}");
             WriteLine($"失败处理量: {failureCount}");
@@ -347,7 +392,7 @@ namespace ImageAnalyzerCore
             // 移除 (tag) 和 :1.2 权重
             cleaned = Regex.Replace(cleaned, @"(\s*\(\s*[^\)]+\s*\))|(\s*:\d+(\.\d+)?\s*)", "", RegexOptions.None); 
             // 将所有连续的逗号和空格标准化为一个逗号后跟一个空格
-            cleaned = Regex.Replace(cleaned, @"[,\s]+", ", ", RegexOptions.None).TrimStart(',', ' ').TrimEnd(',', ' ');
+            cleaned = Regex.Replace(cleaned, @",\s*,\s*", ", ", RegexOptions.None).TrimStart(',', ' ').TrimEnd(',', ' ');
             
             // 确保没有重复的逗号分隔符
             cleaned = Regex.Replace(cleaned, @",\s*,\s*", ", ", RegexOptions.None);
