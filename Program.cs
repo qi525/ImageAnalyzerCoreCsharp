@@ -15,10 +15,15 @@ namespace ImageAnalyzerCore
 {
     class Program
     {
-        // --- 1. 定义您的文件路径和配置 ---
+        // --- 1. 定义您的文件路径和配置 (改为静态字段) ---
         // AnalyzerConfig 是静态类，无需实例化，直接通过类名访问成员。
         private static readonly string FolderToScan = @"C:\stable-diffusion-webui\outputs\txt2img-images\历史";
-        private static readonly string ExcelPath = @"C:\个人数据\C#Code\ImageAnalyzerCore\图片信息报告.xlsx";
+        
+        // Excel 报告的固定存储目录
+        private const string ExcelDirectory = @"C:\个人数据\C#Code\ImageAnalyzerCore";
+        // Excel 报告的基础文件名（使用 AnalyzerConfig 中的前缀）
+        // 假设 AnalyzerConfig.ReportFilenamePrefix 为 "图片信息报告_"
+        private const string ExcelBaseName = AnalyzerConfig.ReportFilenamePrefix; 
 
         public static async Task Main(string[] args)
         {
@@ -27,6 +32,11 @@ namespace ImageAnalyzerCore
             
             while (true)
             {
+                // **【新增逻辑】**：动态生成带时间戳的报告文件名
+                string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+                string finalExcelFileName = $"{ExcelBaseName}{timestamp}.xlsx";
+                string excelPath = Path.Combine(ExcelDirectory, finalExcelFileName);
+                
                 DisplayMenu();
                 Write("请输入您的选择 (1-4): ");
                 // Bug Fix: 使用 ?? string.Empty 确保 choice 永远是不可为 null 的 string
@@ -38,17 +48,17 @@ namespace ImageAnalyzerCore
                     {
                         case "1":
                             // 选项 1: 运行完整分析流程 (扫描 -> TF-IDF -> 报告 -> 评分)
-                            await RunFullAnalysisFlowAsync();
+                            await RunFullAnalysisFlowAsync(excelPath); // 传递动态路径
                             break;
                         case "2":
                             // 选项 2: (重构中) 跳过扫描和 TF-IDF，只生成报告和评分。
                             WriteLine("[INFO] ⚠️ 选择 [2. 只生成 Excel 报告]，目前将执行完整流程 (扫描 -> TF-IDF -> 报告 -> 评分)。");
                             WriteLine("[INFO] 未来重构时，此选项将只执行报告和评分步骤。");
-                            await RunFullAnalysisFlowAsync(); 
+                            await RunFullAnalysisFlowAsync(excelPath); // 传递动态路径
                             break;
                         case "3":
                             // 选项 3: (用户新定义) 仅运行扫描和报告生成 (Scan -> Report -> Open)
-                            await RunScanAndReportFlowAsync();
+                            await RunScanAndReportFlowAsync(excelPath); // 传递动态路径
                             break;
                         case "4":
                             WriteLine("[INFO] 退出程序。");
@@ -82,14 +92,13 @@ namespace ImageAnalyzerCore
         /// <summary>
         /// 完整分析流程：扫描 -> TF-IDF -> 报告 -> 评分 (选项 1)
         /// </summary>
-        private static async Task RunFullAnalysisFlowAsync()
+        private static async Task RunFullAnalysisFlowAsync(string excelPath)
         {
             // 1. 运行扫描和报告生成 (提取公共部分)
-            List<ImageInfo> imageData = await RunScanAndReportGenerationAsync();
+            List<ImageInfo> imageData = await RunScanAndReportGenerationAsync(excelPath);
 
             if (!imageData.Any())
             {
-                // 如果是空列表，则流程已中止
                 return;
             }
 
@@ -112,32 +121,31 @@ namespace ImageAnalyzerCore
             // --- 3. 评分/预测阶段 (对应 Python 的 image_scorer_supervised.py) ---
             WriteLine("\n[INFO] >>> 3. 开始评分预测与结果写入 <<<");
             // 运行评分并打开报告
-            ExecutePostReportActions(ExcelPath, runScoring: true); 
+            ExecutePostReportActions(excelPath, runScoring: true); 
         }
         
         /// <summary>
         /// 仅运行扫描和报告生成流程 (选项 3)
         /// </summary>
-        private static async Task RunScanAndReportFlowAsync()
+        private static async Task RunScanAndReportFlowAsync(string excelPath)
         {
             // 1. 运行扫描和报告生成
-            List<ImageInfo> imageData = await RunScanAndReportGenerationAsync();
+            List<ImageInfo> imageData = await RunScanAndReportGenerationAsync(excelPath);
 
             if (!imageData.Any())
             {
-                // 如果是空列表，则流程已中止
                 return;
             }
 
             // 2. 自动打开报告 (不运行评分)
-            ExecutePostReportActions(ExcelPath, runScoring: false);
+            ExecutePostReportActions(excelPath, runScoring: false);
         }
         
         /// <summary>
         /// 扫描图片并生成报告的公共部分。
         /// </summary>
         /// <returns>扫描到的图片信息列表，如果失败则返回一个空列表。</returns>
-        private static async Task<List<ImageInfo>> RunScanAndReportGenerationAsync()
+        private static async Task<List<ImageInfo>> RunScanAndReportGenerationAsync(string excelPath)
         {
             // --- 1. 扫描阶段 (对应 Python 的 image_scanner.py) ---
             WriteLine("[INFO] >>> 1. 开始扫描图片并提取元数据 <<<");
@@ -153,7 +161,7 @@ namespace ImageAnalyzerCore
 
             // --- 2. 报告生成阶段 (对应 Python 的 create_excel_report) ---
             WriteLine("\n[INFO] >>> 2. 开始生成 Excel 报告 <<<");
-            bool reportSuccess = SimulateCreateExcelReport(imageData, ExcelPath);
+            bool reportSuccess = SimulateCreateExcelReport(imageData, excelPath);
 
             if (!reportSuccess)
             {
