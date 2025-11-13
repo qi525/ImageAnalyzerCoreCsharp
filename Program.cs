@@ -7,6 +7,8 @@ using ImageAnalyzerCore;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading.Tasks;
+// [新增] 引入 ClosedXML 库，用于实际写入 XLSX 文件
+using ClosedXML.Excel; 
 
 // 引入 Logger 机制 (Loguru 的 C# 替代方案，这里使用简单的 Console.WriteLine 占位)
 using static System.Console; // 简化 Console.WriteLine 为 WriteLine
@@ -21,8 +23,7 @@ namespace ImageAnalyzerCore
         
         // Excel 报告的固定存储目录
         private const string ExcelDirectory = @"C:\个人数据\C#Code\ImageAnalyzerCore";
-        // Excel 报告的基础文件名（使用 AnalyzerConfig 中的前缀）
-        // 假设 AnalyzerConfig.ReportFilenamePrefix 为 "图片信息报告_"
+        // Excel 报告的基础文件名
         private const string ExcelBaseName = AnalyzerConfig.ReportFilenamePrefix; 
 
         public static async Task Main(string[] args)
@@ -173,24 +174,64 @@ namespace ImageAnalyzerCore
             return imageData;
         }
 
-        // ⚠️ 占位函数：模拟 Excel 报告创建
+        /// <summary>
+        /// **[关键修改]** 实际的 Excel 报告创建函数，使用 ClosedXML 写入数据。
+        /// </summary>
         private static bool SimulateCreateExcelReport(List<ImageInfo> imageData, string path)
         {
-            // 实际 C# 代码中需要使用 ClosedXML/EPPlus 等库来创建并填充 Excel 文件
-            WriteLine($"[ALERT] ！！！ Excel 报告问题警告 ！！！");
-            WriteLine($"[ALERT] 当前函数只是【模拟】创建报告文件: {path} (包含 {imageData.Count} 条数据)。");
-            WriteLine($"[ALERT] 实际的 Excel 内容填充功能【尚未实现】。你需要引入 ClosedXML 或 EPPlus 等库，并编写逻辑来填充 {nameof(ImageInfo)} 列表中的数据。");
+            WriteLine($"[INFO] 正在使用 ClosedXML 库创建 Excel 报告: {path} (包含 {imageData.Count} 条数据)。");
             
-            // 确保文件路径存在，以便后续可以“打开”它
+            // 确保目录存在
+            Directory.CreateDirectory(Path.GetDirectoryName(path));
+
             try
             {
-                // 创建一个空文件作为占位
-                File.WriteAllText(path, "Simulated Excel Content Placeholder");
+                // 1. 创建工作簿
+                using (var workbook = new XLWorkbook())
+                {
+                    var worksheet = workbook.Worksheets.Add("图片信息报告");
+
+                    // 2. 写入表头 (使用 AnalyzerConfig 定义的列名)
+                    worksheet.Cell("A1").Value = "序号";
+                    worksheet.Cell("B1").Value = "文件名";
+                    worksheet.Cell("C1").Value = "文件路径";
+                    worksheet.Cell("D1").Value = "创建时间";
+                    worksheet.Cell("E1").Value = "修改时间";
+                    worksheet.Cell("F1").Value = "原始标签";
+                    worksheet.Cell("G1").Value = AnalyzerConfig.CoreKeywordColumnName; // 提取正向词的核心词
+                    worksheet.Cell("H1").Value = "文件状态";
+                    
+                    // 3. 写入数据行
+                    for (int i = 0; i < imageData.Count; i++)
+                    {
+                        var info = imageData[i];
+                        int row = i + 2; // 数据从第 2 行开始
+
+                        worksheet.Cell(row, 1).Value = i + 1; // 序号
+                        worksheet.Cell(row, 2).Value = info.FileName;
+                        worksheet.Cell(row, 3).Value = info.FilePath;
+                        worksheet.Cell(row, 4).Value = info.CreationTime.ToString("yyyy-MM-dd HH:mm:ss");
+                        worksheet.Cell(row, 5).Value = info.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss");
+                        worksheet.Cell(row, 6).Value = info.ExtractedTagsRaw;
+                        worksheet.Cell(row, 7).Value = info.CoreKeywords;
+                        worksheet.Cell(row, 8).Value = info.Status;
+                    }
+
+                    // 4. 格式化：自动调整列宽
+                    worksheet.Columns().AdjustToContents();
+
+                    // 5. 保存文件
+                    workbook.SaveAs(path);
+                }
+                WriteLine($"[SUCCESS] Excel 报告已成功写入到: {path}");
                 return true;
             }
             catch (Exception ex)
             {
-                WriteLine($"[ERROR] 模拟文件创建失败: {ex.Message}");
+                // 捕获 ClosedXML 写入失败的情况，通常是由于未安装 NuGet 包或权限问题。
+                WriteLine($"[FATAL ERROR] 实际的 Excel 报告生成失败。");
+                WriteLine($"[CHECK] 请【确保】您已通过 NuGet 安装了 'ClosedXML' 包。");
+                WriteLine($"错误详情: {ex.Message}");
                 return false;
             }
         }
