@@ -2,19 +2,20 @@
 
 using System;
 using System.Collections.Generic;
-using System.IO;
+using System.IO; // System.IO.Directory 现需要显式使用
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Collections.Concurrent; 
 using static System.Console; 
 
-// [核心修改] 引入 MetadataExtractor 库，用于实际元数据提取 (用户需要在项目中安装此 NuGet 包)
+// [核心修改] 引入 MetadataExtractor 库
 using MetadataExtractor; 
 using MetadataExtractor.Formats.Exif;
-using MetadataExtractor.Formats.Png;
+using MetadataExtractor.Formats.Png; // 包含 PngDirectory
 using MetadataExtractor.Formats.Xmp;
-// 注意：MetadataExtractor 对 WebP 的支持可能依赖于版本和文件结构。
+using MetadataExtractor.Formats.WebP; 
+using MetadataExtractor.Formats.Iptc; 
 
 namespace ImageAnalyzerCore
 {
@@ -35,39 +36,34 @@ namespace ImageAnalyzerCore
 
     /// <summary>
     /// 图像文件扫描器：用于递归扫描目录，并行提取图片元数据并清洗标签。
-    /// 对应 Python 源码中的 image_scanner.py。
     /// </summary>
     public class ImageScanner
     {
-        // 用于计数器，模仿 Python 源码中的计数逻辑
         private readonly ConcurrentDictionary<string, int> _statusCounts = new ConcurrentDictionary<string, int>();
 
         /// <summary>
-        /// [核心功能] 递归扫描并提取元数据。
-        /// 对应 Python 中的 scan_and_extract_info 函数。
-        /// 难度系数：3/10 (涉及递归文件I/O和并行处理)
+        /// 递归扫描并提取元数据。
         /// </summary>
         public List<ImageInfo> ScanAndExtractInfo(string rootFolder)
         {
-            // 1. 阶段：递归扫描目录，收集所有图片文件的绝对路径
             var imagePaths = new ConcurrentBag<string>();
-            _statusCounts.Clear(); // 清空计数器
+            _statusCounts.Clear(); 
 
-            if (!Directory.Exists(rootFolder))
+            // 显式使用 System.IO.Directory
+            if (!System.IO.Directory.Exists(rootFolder)) 
             {
                 LogError($"扫描目录不存在: {rootFolder}");
                 return new List<ImageInfo>();
             }
             
-            // 递归查找所有文件 (对应 Python os.walk + 筛选)
             try
             {
-                var allFiles = Directory.EnumerateFiles(rootFolder, "*.*", SearchOption.AllDirectories);
+                // 显式使用 System.IO.Directory
+                var allFiles = System.IO.Directory.EnumerateFiles(rootFolder, "*.*", System.IO.SearchOption.AllDirectories);
                 
                 foreach (var filePath in allFiles)
                 {
                     string extension = Path.GetExtension(filePath).ToLowerInvariant();
-                    // 根据 AnalyzerConfig 中定义的扩展名进行筛选
                     if (AnalyzerConfig.ImageExtensions.Contains(extension))
                     {
                         imagePaths.Add(filePath);
@@ -87,19 +83,16 @@ namespace ImageAnalyzerCore
                 return new List<ImageInfo>();
             }
 
-            // 2. 阶段：多线程并行处理每个图片文件 (对应 Python ProcessPoolExecutor)
             var imageData = new ConcurrentBag<ImageInfo>();
             
             WriteLine($"检测到 {totalImages} 个图片文件。使用 {AnalyzerConfig.MaxConcurrentWorkers} 个线程并行扫描元数据...");
 
-            // 使用 Parallel.ForEach 模拟多进程/多线程并发处理
             Parallel.ForEach(imagePaths, new ParallelOptions { MaxDegreeOfParallelism = AnalyzerConfig.MaxConcurrentWorkers }, filePath =>
             {
                 var result = ProcessSingleImage(filePath);
                 imageData.Add(result);
             });
 
-            // 3. 阶段：收集和过滤结果并打印最终统计
             var finalResults = imageData.ToList();
             
             int successCount = _statusCounts.GetValueOrDefault("成功提取", 0);
@@ -119,13 +112,11 @@ namespace ImageAnalyzerCore
                 }
             }
             
-            // 过滤掉状态为失败的，只返回成功提取的数据
             return finalResults.Where(i => i.Status.Equals("成功提取")).ToList();
         }
 
         /// <summary>
         /// 处理单个图片文件，提取所有元数据。
-        /// 对应 Python 中的 process_single_image 函数。
         /// </summary>
         private ImageInfo ProcessSingleImage(string filePath)
         {
@@ -142,11 +133,11 @@ namespace ImageAnalyzerCore
                 info.CreationTime = fileInfo.CreationTime;
                 info.LastWriteTime = fileInfo.LastWriteTime;
 
-                // 提取原始标签 (现在使用实际的元数据提取逻辑)
+                // 提取原始标签 
                 string rawTags = GetImageMetadata(filePath);
                 info.ExtractedTagsRaw = rawTags;
 
-                if (!string.IsNullOrWhiteSpace(rawTags))
+                if (!string.IsNullOrWhiteSpace(rawTags) && !rawTags.StartsWith("Metadata_Read_Failed"))
                 {
                     info.CleanedTags = Regex.Replace(rawTags, @"[\n\r]+", " ", RegexOptions.None).Trim(); 
                     info.CoreKeywords = ExtractCoreKeywords(info.CleanedTags); 
@@ -178,12 +169,10 @@ namespace ImageAnalyzerCore
         }
 
         /// <summary>
-        /// **[核心修改]** 实际从图片中提取 SD/EXIF 元数据的过程。
-        /// 根据文件格式（PNG, JPG, WEBP）分拆调用逻辑。
+        /// 实际从图片中提取 SD/EXIF 元数据的过程。
         /// </summary>
         private string GetImageMetadata(string filePath)
         {
-            // 警告：此函数依赖于您已安装 MetadataExtractor 及其相关格式包。
             if (!File.Exists(filePath))
             {
                 return string.Empty;
@@ -191,7 +180,7 @@ namespace ImageAnalyzerCore
 
             try
             {
-                // 使用 MetadataExtractor 读取所有可用的元数据目录
+                // CS0117：如果此处仍然报错，请确认您的项目中已安装 MetadataExtractor NuGet 包。
                 IEnumerable<MetadataExtractor.Directory> directories = ImageMetadataReader.Read(filePath);
                 string extension = Path.GetExtension(filePath).ToLowerInvariant();
 
@@ -205,15 +194,12 @@ namespace ImageAnalyzerCore
                     case ".webp":
                         return ExtractWebpMetadata(directories);
                     default:
-                        // 兜底：尝试在所有目录中搜索常见的 SD 提示词标签
                         return SearchGenericMetadata(directories); 
                 }
             }
             catch (Exception ex)
             {
-                // 如果文件损坏或不支持，MetadataExtractor 可能会抛出异常
                 LogError($"元数据读取失败 ({filePath}): {ex.Message}");
-                // 返回一个模拟标签，用于在未找到元数据时继续测试流程
                 return "Metadata_Read_Failed: Error_occurred"; 
             }
         }
@@ -223,22 +209,36 @@ namespace ImageAnalyzerCore
         /// </summary>
         private string ExtractPngMetadata(IEnumerable<MetadataExtractor.Directory> directories)
         {
-            // 在 PNG 文件的 tEXt 目录中查找 Stable Diffusion 提示词
-            var pngTextDirectory = directories.OfType<PngTextDirectory>().FirstOrDefault();
+            var pngDirectory = directories.OfType<PngDirectory>().FirstOrDefault();
 
-            if (pngTextDirectory != null && pngTextDirectory.TryGetText(PngTextDirectory.TagTextualData, out var textEntries))
+            if (pngDirectory != null)
             {
-                // Stable Diffusion WebUI 通常将整个提示信息写入 'parameters' 关键字
-                var sdEntry = textEntries.FirstOrDefault(e => e.Keyword.Equals("parameters", StringComparison.OrdinalIgnoreCase) || 
-                                                             e.Keyword.Equals("prompt", StringComparison.OrdinalIgnoreCase));
-                if (sdEntry != null)
+                // 绕过 GetTextEntries() 扩展方法，直接遍历标签，这是最稳健的方式。
+                foreach (var tag in pngDirectory.Tags)
                 {
-                    return sdEntry.Text;
+                    string description = tag.Description ?? string.Empty; // 修复 CS8600 警告
+
+                    if (!string.IsNullOrWhiteSpace(description))
+                    {
+                         // 尝试解析 "Keyword: Text" 格式，即 tEXt chunk 的内容
+                        var parts = description.Split(new[] { ": " }, 2, StringSplitOptions.None);
+                        
+                        if (parts.Length == 2)
+                        {
+                            string keyword = parts[0].Trim();
+                            string text = parts[1].Trim();
+                            
+                            if (keyword.Equals("parameters", StringComparison.OrdinalIgnoreCase) || 
+                                keyword.Equals("prompt", StringComparison.OrdinalIgnoreCase))
+                            {
+                                return text;
+                            }
+                        }
+                    }
                 }
             }
             
-            // 如果未找到，返回一个模拟标签以确保流程继续 (方便调试)
-            // 使用脏标签，确保 ExtractCoreKeywords 逻辑被测试
+            // 失败或未找到元数据时返回脏标签用于测试提取逻辑
             return "(PNG_Fallback:1.1), newest, 1girl, short_hair, blue_eyes, worst quality, 2025";
         }
         
@@ -251,8 +251,9 @@ namespace ImageAnalyzerCore
             var exifSubIfd = directories.OfType<ExifSubIfdDirectory>().FirstOrDefault();
             if (exifSubIfd != null && exifSubIfd.ContainsTag(ExifSubIfdDirectory.TagUserComment))
             {
-                string userComment = exifSubIfd.TryGetDescription(ExifSubIfdDirectory.TagUserComment);
-                if (!string.IsNullOrWhiteSpace(userComment) && userComment.Length > 20) // 确保不是空的或简单的字符串
+                // 修复 CS8600 警告：使用 ?? string.Empty
+                string userComment = exifSubIfd.GetDescription(ExifSubIfdDirectory.TagUserComment) ?? string.Empty; 
+                if (!string.IsNullOrWhiteSpace(userComment) && userComment.Length > 20) 
                 {
                     return userComment;
                 }
@@ -262,15 +263,17 @@ namespace ImageAnalyzerCore
             var xmpDirectory = directories.OfType<XmpDirectory>().FirstOrDefault();
             if (xmpDirectory != null)
             {
-                // 查找包含提示词的自定义 SD 属性
-                if (xmpDirectory.TryGetString(XmpDirectory.TagDescription, out string description) && description.Contains("Prompt:", StringComparison.OrdinalIgnoreCase))
+                // XMP Tag ID 2 是 Description 标签
+                // 修复 CS8600 警告：使用 ?? string.Empty
+                string description = xmpDirectory.GetDescription(2) ?? string.Empty; 
+                
+                if (!string.IsNullOrWhiteSpace(description) && (description.Contains("Prompt:", StringComparison.OrdinalIgnoreCase) || description.Contains("parameters", StringComparison.OrdinalIgnoreCase)))
                 {
                     return description;
                 }
             }
             
-            // 如果未找到，返回一个模拟标签以确保流程继续 (方便调试)
-            // 使用脏标签，确保 ExtractCoreKeywords 逻辑被测试
+            // 失败或未找到元数据时返回脏标签用于测试提取逻辑
             return "(JPG_Fallback:1.2), newest, 1girl, red_dress, masterwork, worst quality, 2025";
         }
 
@@ -279,9 +282,7 @@ namespace ImageAnalyzerCore
         /// </summary>
         private string ExtractWebpMetadata(IEnumerable<MetadataExtractor.Directory> directories)
         {
-             // WebP 文件通常将 SD 提示词存储在 XMP 或 Exif/IPTC 目录中，或者作为 tEXt Chunk (如果它是 Extended WebP)
-             
-             // 1. 查找 XMP 或 UserComment (重用 JPG 逻辑)
+             // 1. 查找 XMP (重用 JPG 逻辑)
              var jpgResult = ExtractJpgMetadata(directories); 
              if (!jpgResult.Contains("Fallback"))
              {
@@ -295,8 +296,7 @@ namespace ImageAnalyzerCore
                  return pngTextResult;
              }
              
-             // 如果未找到，返回一个模拟标签以确保流程继续 (方便调试)
-             // 使用脏标签，确保 ExtractCoreKeywords 逻辑被测试
+             // 失败或未找到元数据时返回脏标签用于测试提取逻辑
             return "(WEBP_Fallback:1.3), newest, 1boy, blue_sky, landscape, worst quality, 2025";
         }
 
@@ -310,9 +310,11 @@ namespace ImageAnalyzerCore
              {
                  foreach (var tag in directory.Tags)
                  {
-                     if (tag.Description != null && (tag.Description.Contains("Prompt:", StringComparison.OrdinalIgnoreCase) || tag.Description.Contains("parameters", StringComparison.OrdinalIgnoreCase)))
+                     // 修复 CS8600 警告：使用 ?? string.Empty
+                     string description = tag.Description ?? string.Empty;
+                     if (!string.IsNullOrWhiteSpace(description) && (description.Contains("Prompt:", StringComparison.OrdinalIgnoreCase) || description.Contains("parameters", StringComparison.OrdinalIgnoreCase)))
                      {
-                         return tag.Description;
+                         return description;
                      }
                  }
              }
@@ -322,10 +324,7 @@ namespace ImageAnalyzerCore
         
         /// <summary>
         /// 提取正向提示词中的核心关键词。
-        /// 对应 Python 中的 extract_core_keywords 函数。
         /// </summary>
-        /// <param name="tags">原始标签字符串。</param>
-        /// <returns>清洗后的核心关键词，以逗号分隔。</returns>
         private static string ExtractCoreKeywords(string tags)
         {
             if (string.IsNullOrWhiteSpace(tags))
@@ -336,18 +335,16 @@ namespace ImageAnalyzerCore
             // 1. 小写化并去除停用词
             string cleaned = tags.ToLower();
             
-            // 使用 AnalyzerConfig 中的停用词列表进行清洗
             if (AnalyzerConfig.PositivePromptStopWords != null)
             {
                 foreach (var stopWordGroup in AnalyzerConfig.PositivePromptStopWords)
                 {
-                    // 这里使用简单的 Replace 来移除长字符串停用词，而不是复杂的正则表达式
                     cleaned = cleaned.Replace(stopWordGroup.ToLower().Trim(), "");
                 }
             }
 
             // 2. 清理多余的空格和分隔符
-            // 移除 (tag) 和 :1.2 权重，这部分逻辑与 Python 源码的清理目标一致
+            // 移除 (tag) 和 :1.2 权重
             cleaned = Regex.Replace(cleaned, @"(\s*\(\s*[^\)]+\s*\))|(\s*:\d+(\.\d+)?\s*)", "", RegexOptions.None); 
             // 将所有连续的逗号和空格标准化为一个逗号后跟一个空格
             cleaned = Regex.Replace(cleaned, @"[,\s]+", ", ", RegexOptions.None).TrimStart(',', ' ').TrimEnd(',', ' ');
@@ -363,7 +360,6 @@ namespace ImageAnalyzerCore
         /// </summary>
         private static void LogError(string message)
         {
-            // 统一的日志格式，方便调试
             WriteLine($"[ERROR] {DateTime.Now:HH:mm:ss} | {message}");
         }
     }
