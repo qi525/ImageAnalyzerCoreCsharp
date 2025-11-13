@@ -6,6 +6,7 @@ using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using System.Collections.Concurrent; // 修复错误 CS0246: 未能找到类型或命名空间名“ConcurrentDictionary<,>”
 // 假设已引入用于Excel操作的库，例如 ClosedXML 或 EPPlus
 // using ClosedXML.Excel; 
 // 假设已引入 ML.NET 相关的库
@@ -46,7 +47,7 @@ namespace ImageAnalyzerCore
         /// 提取文件夹名称中的人工评分（如 @@@评分98）
         /// 对应 Python 源码中的 extract_score_from_folder_name 函数。
         /// </summary>
-        private static double ExtractCustomScore(string folderName)
+        private static double ExtractCustomScore(string? folderName) // 修复形参可能传入 null 的错误
         {
             if (string.IsNullOrWhiteSpace(folderName)) return 0.0;
 
@@ -104,7 +105,7 @@ namespace ImageAnalyzerCore
                 string filePath = row["FilePath"];
 
                 // A. 提取人工/文件夹评分 (人工评分优先)
-                string folderName = Path.GetFileName(Path.GetDirectoryName(filePath));
+                string? folderName = Path.GetFileName(Path.GetDirectoryName(filePath)); // 修复局部变量可能为 null 的警告
                 double customScore = ExtractCustomScore(folderName);
                 
                 if (customScore > 0)
@@ -122,7 +123,7 @@ namespace ImageAnalyzerCore
                     // C. 应用 RATING_MAP 中的文件夹基准分（如果文件不在自定义评分文件夹）
                     foreach (var kvp in AnalyzerConfig.RatingMap)
                     {
-                        if (folderName.Contains(kvp.Key))
+                        if (folderName != null && folderName.Contains(kvp.Key)) // 修复可能出现的空引用解引用                        
                         {
                             // 如果文件名包含基准关键词，则提高分数作为模型学习的基础
                             predictedScore = Math.Max(predictedScore, kvp.Value * 0.95); // 稍微低于基准分

@@ -7,6 +7,7 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Collections.Concurrent; // 修复错误 CS0246: 未能找到类型或命名空间名“ConcurrentDictionary<,>”
 
 namespace ImageAnalyzerCore
 {
@@ -74,7 +75,7 @@ namespace ImageAnalyzerCore
 
                 // 2. 确定分类目标关键词 (取 CleanedTags 中的第一个词)
                 // 对应 Python 源码中的 first_keyword = tags[0]
-                string firstKeyword = imageInfo.CleanedTags.Split(new[] { ',', '，' }, StringSplitOptions.RemoveEmptyEntries)
+                string? firstKeyword = imageInfo.CleanedTags.Split(new[] { ',', '，' }, StringSplitOptions.RemoveEmptyEntries)
                                                           .Select(t => t.Trim())
                                                           .FirstOrDefault();
 

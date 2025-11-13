@@ -15,9 +15,11 @@ namespace ImageAnalyzerCore
     // 结构体：用于存储单张图片的所有分析信息，对应 Python 中的 Dict[str, Any]
     public class ImageInfo
     {
-        public string FilePath { get; set; }
-        public string FileName { get; set; }
-        public string DirectoryName { get; set; }
+        // 修复 1, 2, 3, 5：初始化不可为 null 的字符串属性为 string.Empty
+        public string FilePath { get; set; } = string.Empty;
+        public string FileName { get; set; } = string.Empty;
+        public string DirectoryName { get; set; } = string.Empty;
+        
         public string ExtractedTagsRaw { get; set; } = string.Empty; // 原始提取的标签
         public string CleanedTags { get; set; } = string.Empty;       // 清洗后的标签字符串 (用于TF-IDF)
         public string CoreKeywords { get; set; } = string.Empty;      // 核心关键词字符串 (用于Excel L列)
@@ -82,13 +84,14 @@ namespace ImageAnalyzerCore
         {
             // 模仿 Python 的 logger 机制
             void LogError(string msg) => Console.WriteLine($"[ERROR] [{Path.GetFileName(filePath)}] {msg}");
-            void LogInfo(string msg) => Console.WriteLine($"[INFO] [{Path.GetFileName(filePath)}] {msg}");
+            // 修复 4：删除未使用的本地函数 LogInfo
+            // void LogInfo(string msg) => Console.WriteLine($"[INFO] [{Path.GetFileName(filePath)}] {msg}");
 
             var info = new ImageInfo
             {
                 FilePath = filePath,
                 FileName = Path.GetFileName(filePath),
-                DirectoryName = Path.GetDirectoryName(filePath)
+                DirectoryName = Path.GetDirectoryName(filePath) ?? string.Empty // 修复：Path.GetDirectoryName可能返回null，使用??操作符安全赋值
             };
 
             try

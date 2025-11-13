@@ -91,7 +91,7 @@ namespace ImageAnalyzerCore
         /// 实际应使用 ML.NET/Numpy-like 库进行计算。
         /// </summary>
         /// <returns>Tuple：(TF-IDF 矩阵 [文档数 x 特征数], 特征词列表)</returns>
-        private static (double[][] Matrix, List<string> FeatureNames) SimulateTfidfVectorization(List<string> corpus)
+        private static (double[][]? Matrix, List<string> FeatureNames) SimulateTfidfVectorization(List<string> corpus)
         {
             // ⚠️ 此处为简化和占位，实际需要完整的 TF-IDF 算法实现。
             // 假定词汇表：
