@@ -182,8 +182,10 @@ namespace ImageAnalyzerCore
             WriteLine($"[INFO] 正在使用 ClosedXML 库创建 Excel 报告: {path} (包含 {imageData.Count} 条数据)。");
             
             // 确保目录存在
-            Directory.CreateDirectory(Path.GetDirectoryName(path));
-
+            // 解决编译器警告：Path.GetDirectoryName(path) 可能返回 null。使用 ?? 确保非 null 引用。
+            string? directoryPath = Path.GetDirectoryName(path);
+            Directory.CreateDirectory(directoryPath ?? string.Empty);
+            
             try
             {
                 // 1. 创建工作簿
