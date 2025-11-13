@@ -154,15 +154,16 @@ namespace ImageAnalyzerCore
         /// 将 TF-IDF 关键词列表格式化为文件名后缀字符串。
         /// 对应 Python 源码中的 format_tfidf_tags_for_filename 函数。
         /// </summary>
-        public static string FormatTfidfTagsForFilename(List<string> tagList)
+        // 修复：添加 tagDelimiter 参数，匹配 Program.cs 中的调用
+        public static string FormatTfidfTagsForFilename(List<string> tagList, string tagDelimiter)
         {
             if (tagList == null || !tagList.Any())
             {
                 return string.Empty;
             }
 
-            // 格式化为 ___tag1___tag2 格式
-            return AnalyzerConfig.TagDelimiter + string.Join(AnalyzerConfig.TagDelimiter, tagList);
+            // 格式化为 ___tag1___tag2 格式 (遵循 Python 源码逻辑：分隔符 + Join)
+            return tagDelimiter + string.Join(tagDelimiter, tagList);
         }
     }
 }
