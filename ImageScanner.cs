@@ -180,8 +180,8 @@ namespace ImageAnalyzerCore
 
             try
             {
-                // CS0117：如果此处仍然报错，请确认您的项目中已安装 MetadataExtractor NuGet 包。
-                IEnumerable<MetadataExtractor.Directory> directories = ImageMetadataReader.Read(filePath);
+                // 修复：将 ImageMetadataReader.Read 更改为正确的 API 名称 ImageMetadataReader.ReadMetadata。
+                IEnumerable<MetadataExtractor.Directory> directories = ImageMetadataReader.ReadMetadata(filePath);
                 string extension = Path.GetExtension(filePath).ToLowerInvariant();
 
                 switch (extension)
