@@ -10,6 +10,7 @@ using System.Threading.Tasks;
 // [新增] 引入 ClosedXML 库，用于实际写入 XLSX 文件
 using ClosedXML.Excel; 
 
+
 // 引入 Logger 机制 (Loguru 的 C# 替代方案，这里使用简单的 Console.WriteLine 占位)
 using static System.Console; // 简化 Console.WriteLine 为 WriteLine
 
@@ -40,7 +41,7 @@ namespace ImageAnalyzerCore
                 string excelPath = Path.Combine(ExcelDirectory, finalExcelFileName);
                 
                 DisplayMenu();
-                Write("请输入您的选择 (1-4): ");
+                Write("请输入您的选择 (1-5): "); // 菜单项已增至 5
                 // Bug Fix: 使用 ?? string.Empty 确保 choice 永远是不可为 null 的 string
                 string choice = ReadLine()?.Trim() ?? string.Empty; 
 
@@ -63,10 +64,14 @@ namespace ImageAnalyzerCore
                             await RunScanAndReportFlowAsync(excelPath); // 传递动态路径
                             break;
                         case "4":
+                            // 选项 4: 指定评分图片移动到外层 (Score Organizer)
+                            await RunScoreOrganizerFlowAsync();
+                            break;
+                        case "5":
                             WriteLine("[INFO] 退出程序。");
                             return;
                         default:
-                            WriteLine("[WARNING] 无效的选项，请重新输入 1-4 之间的数字。");
+                            WriteLine("[WARNING] 无效的选项，请重新输入 1-5 之间的数字。"); // 提示更新
                             break;
                     }
                     WriteLine("\n-----------------------------------\n");
@@ -88,7 +93,8 @@ namespace ImageAnalyzerCore
             WriteLine("  1. 完整流程 (扫描 -> 关键词提取 -> 报告生成 -> 评分预测)");
             WriteLine("  2. 只生成 Excel 报告 (跳过扫描和关键词提取，但需要预先的数据缓存)");
             WriteLine("  3. 仅扫描和报告生成 (只运行扫描，不进行关键词提取和评分，完成后自动打开报告)");
-            WriteLine("  4. 退出程序");
+            WriteLine("  4. 指定评分图片移动到外层 (Score Organizer)"); // 新增选项
+            WriteLine("  5. 退出程序"); // 退出选项改为 5
         }
 
         /// <summary>
@@ -141,6 +147,34 @@ namespace ImageAnalyzerCore
 
             // 2. 自动打开报告 (不运行评分)
             ExecutePostReportActions(excelPath, runScoring: false);
+        }
+
+        /// <summary>
+        /// 指定评分图片移动到外层流程 (选项 4)
+        /// </summary>
+        private static async Task RunScoreOrganizerFlowAsync()
+        {
+            WriteLine("\n[INFO] >>> 4. 指定评分图片移动到外层 (Score Organizer) <<<");
+            // 假设 ScoreOrganizer 类已在 ImageAnalyzerCore 命名空间中定义
+            var organizer = new ScoreOrganizer(); 
+            
+            WriteLine($"文件来源 (历史目录): {ScoreOrganizer.StaticSourceRootDir}");
+            WriteLine($"目标目录 (评分XX父目录): {ScoreOrganizer.stringStaticTargetBaseDir}");
+            
+            WriteLine("\n请在控制台输入您想要整理的评分范围（如 '80-99'）或单个评分（如 '80'）：");
+            Write("评分输入 (例如 80-99 或 80): ");
+            
+            // 使用 ?? string.Empty 确保 userInput 永远是不可为 null 的 string
+            string userInput = ReadLine()?.Trim() ?? string.Empty;
+            
+            if (!string.IsNullOrEmpty(userInput))
+            {
+                organizer.OrganizeFiles(userInput);
+            }
+            else
+            {
+                WriteLine("[WARNING] 用户未提供评分输入，流程中止。");
+            }
         }
         
         /// <summary>
