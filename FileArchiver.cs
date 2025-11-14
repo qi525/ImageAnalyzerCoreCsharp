@@ -6,7 +6,8 @@ using System.IO;
 using System.Linq;
 using System.Collections.Concurrent;
 using System.Threading.Tasks;
-using ShellProgressBar; // 引入进度条库
+using Spectre.Console; // 引入Spectre.Console，用于控制台UI和进度条
+// using Spectre.Console.Progress; // 已移除，解决 CS0138 错误
 
 
 /// 流程说明【流程说明不可删除！！！】
@@ -25,7 +26,7 @@ using ShellProgressBar; // 引入进度条库
 /// 细节要求：
 /// ！！！为了保护特定文件夹目录的内容
 /// 1. 使用一个专门用于移动的函数，实现图片文件的移动和归档。
-/// 2. 不仅要在主流程上进行跳过保护文件夹目录的检查，还要在移动函数中再次进行检查，确保万无一失。
+/// 2. 不仅要在主流程上进行跳过保护文件夹目录的检查，还要在移动函数中再次进行检查，确保万无失一。
 /// 3. 控制台打印最终实现归档的图片文件数量，成功数量和失败数量。
 /// 流程说明【流程说明不可删除！！！】
 /// 
@@ -33,7 +34,7 @@ namespace ImageAnalyzerCore
 {
     /// <summary>
     /// 文件归档器：核心职责是根据安全和业务规则，将图片文件从源目录安全移动到日期归档目录。
-    /// 难度系数：7/10 (涉及复杂的目录扫描、多重安全检查、日期目录创建和并发计数)
+    /// 难度系数：8/10 (涉及复杂的目录扫描、多重安全检查、日期目录创建和并发计数，现增加了新库重构)
     /// </summary>
     public class FileArchiver
     {
@@ -53,8 +54,7 @@ namespace ImageAnalyzerCore
         // 用于记录处理状态和计数的并发字典（满足计数器要求）
         private readonly ConcurrentDictionary<string, int> _statusCounts = new ConcurrentDictionary<string, int>();
 
-        // 进度条实例
-        private IProgressBar? _progressBar; // 声明为可为 null，解决 CS8618 警告
+        // 进度条实例字段已移除，改为局部变量 ProgressTask
 
         /// <summary>
         /// [步骤 1] 启动归档主流程，负责调用所有子步骤并打印最终统计结果。
@@ -84,27 +84,31 @@ namespace ImageAnalyzerCore
             }
 
             // 2. 并行处理文件
-            // 使用 ShellProgressBar 实现类似 tqdm 的实时预览
-            // 【修改点 1】：隐藏预估剩余时间，节省右侧空间，优先显示已用时间
-            var options = new ProgressBarOptions 
-            { 
-                ForegroundColor = ConsoleColor.Yellow, 
-                BackgroundColor = ConsoleColor.DarkGray, 
-                ProgressBarOnBottom = true,
-                DisplayTimeInRealTime = false, // 减少实时更新的开销和潜在截断问题
-                ShowEstimatedDuration = false // 隐藏预估剩余时间，释放空间以显示完整的“已用时间”
-            };
-            using (_progressBar = new ProgressBar(totalFiles, "图片文件归档中...", options))
-            {
-                Parallel.ForEach(filesToArchive, new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount }, filePath =>
+            // 【核心重构】：使用 Spectre.Console 替换 ShellProgressBar
+            AnsiConsole.Progress()
+                // 【新配置】：显示 任务名称、进度条、进度百分比、和剩余时间
+                .Columns(new ProgressColumn[] // 修复 CS0246：将 IProgressColumn 替换为 ProgressColumn
                 {
-                    ProcessFileForArchiving(filePath);
-                });
+                    new TaskDescriptionColumn(),    // 显示任务名称/描述（归档中...）
+                    new ProgressBarColumn(),        // 进度条方块
+                    new PercentageColumn(),         // 修复 CS0246：ProgressTextColumn 不可用，替换为 PercentageColumn
+                    new RemainingTimeColumn(),      // 显示剩余预估时间
+                })
+                .Start(ctx =>
+                {
+                    // 定义进度任务
+                    var progressTask = ctx.AddTask("归档中...", new ProgressTaskSettings { MaxValue = totalFiles }); 
 
-                // 确保进度条完成
-                // 【修改点 3】：使用 PadRight 填充空格，强制消息占据一定宽度，避免进度条主体挤压计时器。
-                _progressBar.Message = "归档完成。".PadRight(10, ' ');
-            }
+                    // 并行处理文件
+                    Parallel.ForEach(filesToArchive, new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount }, filePath =>
+                    {
+                        // 传递 progressTask 给处理函数
+                        ProcessFileForArchiving(filePath, progressTask);
+                    });
+                    
+                    // 确保任务在退出前停止
+                    progressTask.StopTask();
+                });
 
             // 3. 打印最终统计结果 (细节要求 3)
             PrintFinalCounts(totalFiles);
@@ -138,6 +142,7 @@ namespace ImageAnalyzerCore
                 return allFiles;
             }
 
+            // 仍只遍历 RootDirectory 的第一层子目录，以排除 ArchiveDir 和顶层受保护目录
             var targetDirectories = Directory.EnumerateDirectories(rootDir, "*", SearchOption.TopDirectoryOnly)
                                              .ToList();
 
@@ -170,7 +175,9 @@ namespace ImageAnalyzerCore
                 // 收集当前目录下的所有文件 (并进行图片后缀过滤)
                 try
                 {
-                    var filesInDir = Directory.EnumerateFiles(dirPath, searchPattern, SearchOption.TopDirectoryOnly);
+                    //@@ 233,233 -1,1 @@
+                    //- var filesInDir = Directory.EnumerateFiles(dirPath, searchPattern, SearchOption.TopDirectoryOnly);
+                    var filesInDir = Directory.EnumerateFiles(dirPath, searchPattern, SearchOption.AllDirectories); // 修复：改为 AllDirectories 以递归扫描子文件夹
                     foreach (var filePath in filesInDir)
                     {
                         if (IsImageFile(filePath))
@@ -202,13 +209,15 @@ namespace ImageAnalyzerCore
         /// [步骤 3] 处理单个图片文件，执行二次安全检查并决定最终归档路径。
         /// </summary>
         /// <param name="filePath">待归档图片文件的完整路径。</param>
-        private void ProcessFileForArchiving(string filePath)
+        /// <param name="task">Spectre.Console 的进度任务实例。</param>
+        // 【签名修改】：接受 ProgressTask 参数
+        private void ProcessFileForArchiving(string filePath, ProgressTask task)
         {
             // 确保源图片文件仍然存在
             if (!File.Exists(filePath))
             {
                 _statusCounts.AddOrUpdate("跳过 (图片文件丢失)", 1, (key, count) => count + 1);
-                _progressBar?.Tick(); // 文件处理完成，更新进度条
+                task.Increment(1); // 【更新】：使用 task.Increment(1)
                 return;
             }
 
@@ -218,7 +227,7 @@ namespace ImageAnalyzerCore
             {
                 // 虽然在 ScanFilesToArchive 中已检查，但这里是针对文件本身路径的二次检查，用于确保逻辑正确性
                 _statusCounts.AddOrUpdate("安全跳过 (保护文件/二次检查)", 1, (key, count) => count + 1);
-                _progressBar?.Tick(); // 文件处理完成，更新进度条
+                task.Increment(1); // 【更新】：使用 task.Increment(1)
                 return;
             }
             // 【修正点 2 结束】
@@ -228,15 +237,12 @@ namespace ImageAnalyzerCore
             string targetSubDir = Path.Combine(ArchiveTargetDir, todayDate);
             
             // 执行移动操作
-            MoveFileSafe(filePath, targetSubDir);
+            MoveFileSafe(filePath, targetSubDir, task); // 传递 task
         }
 
         /// <summary>
         /// [子函数 A] 检查图片文件/文件夹目录路径是否被配置为受保护路径（包含"超","精","特"），不允许自动移动。
-        /// (细节要求 2：检查逻辑)
         /// </summary>
-        /// <param name="path">图片文件或文件夹目录的完整路径。</param>
-        /// <param name="isDirectory">如果传入的是文件夹目录路径，则设置为 true。</param>
         private static bool IsPathProtected(string path, bool isDirectory = false)
         {
             if (string.IsNullOrWhiteSpace(path)) return false;
@@ -270,11 +276,12 @@ namespace ImageAnalyzerCore
 
         /// <summary>
         /// [步骤 4] 专门用于移动图片文件的安全函数，处理文件夹目录创建、冲突和异常。
-        /// (细节要求 1：专门用于移动的函数)
         /// </summary>
         /// <param name="sourcePath">源图片文件路径。</param>
         /// <param name="targetDirectory">目标文件夹目录路径 (如 ...\历史\2025-11-15)。</param>
-        private void MoveFileSafe(string sourcePath, string targetDirectory)
+        /// <param name="task">Spectre.Console 的进度任务实例。</param>
+        // 【签名修改】：接受 ProgressTask 参数
+        private void MoveFileSafe(string sourcePath, string targetDirectory, ProgressTask task)
         {
             try
             {
@@ -294,7 +301,7 @@ namespace ImageAnalyzerCore
                 {
                     Console.WriteLine($"[WARN] 目标图片文件已存在: {targetPath}，跳过归档以避免覆盖。");
                     _statusCounts.AddOrUpdate("跳过 (目标图片文件冲突)", 1, (key, count) => count + 1);
-                    _progressBar?.Tick(); // 移动跳过，更新进度条
+                    task.Increment(1); // 【更新】：使用 task.Increment(1)
                     return;
                 }
                 
@@ -302,13 +309,13 @@ namespace ImageAnalyzerCore
                 if (sourcePath.Equals(targetPath, StringComparison.OrdinalIgnoreCase))
                 {
                     _statusCounts.AddOrUpdate("跳过 (源与目标路径相同)", 1, (key, count) => count + 1);
-                    _progressBar?.Tick(); // 移动跳过，更新进度条
+                    task.Increment(1); // 【更新】：使用 task.Increment(1)
                     return;
                 }
 
                 // 5. 执行移动图片文件操作
                 File.Move(sourcePath, targetPath);
-                _progressBar?.Tick(); // 【进度条更新】成功移动，更新进度条
+                task.Increment(1); // 【进度条更新】：使用 task.Increment(1)
                 _statusCounts.AddOrUpdate("成功归档图片文件", 1, (key, count) => count + 1);
                 // Console.WriteLine($"[MOVE] 成功归档: {sourcePath} -> {targetPath}"); // 移动成功日志太多，仅记录计数
             }
@@ -316,7 +323,7 @@ namespace ImageAnalyzerCore
             {
                 Console.WriteLine($"[ERROR] 归档图片文件失败: {sourcePath}. 错误: {ex.Message}");
                 _statusCounts.AddOrUpdate("移动失败/异常", 1, (key, count) => count + 1);
-                _progressBar?.Tick(); // 【进度条更新】移动失败，更新进度条
+                task.Increment(1); // 【进度条更新】：使用 task.Increment(1)
             }
         }
         
@@ -335,7 +342,7 @@ namespace ImageAnalyzerCore
             Console.WriteLine($"成功归档图片文件: {successCount} 个");
             Console.WriteLine($"失败/跳过处理图片文件: {failedOrSkipped} 个");
             
-            Console.WriteLine("\n--- 详细状态分类 ---");
+            Console.WriteLine("\n--- 详细状态分类 ---\n");
             // 按照状态名称和计数打印详细信息，统一对齐
             var sortedCounts = _statusCounts.OrderByDescending(kv => kv.Value);
             foreach (var kvp in sortedCounts)
