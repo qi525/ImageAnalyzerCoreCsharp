@@ -6,6 +6,8 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using System.Collections.Concurrent;
 using System.Threading.Tasks;
+using System.Diagnostics; // 用于计时
+using System.Threading; // 用于 Interlocked 计数器
 
 // 假设我们使用 ML.NET 或自定义结构来处理 TF-IDF 向量
 // using Microsoft.ML.Data; 
@@ -62,25 +64,70 @@ namespace ImageAnalyzerCore
             // 使用 ConcurrentDictionary 存储结果
             var resultsMap = new ConcurrentDictionary<string, List<string>>();
             int totalDocuments = validDocuments.Count;
+
+            // --- 计数器/进度跟踪变量初始化 ---
+            var stopWatch = Stopwatch.StartNew(); // 启动计时器
+            int successCount = 0; // 成功任务计数
+            int failedCount = 0;  // 失败任务计数
             
-            Console.WriteLine($"TF-IDF 矩阵计算完毕。开始并行提取 Top {TopNKeywords} 关键词...");
+            Console.WriteLine($"[INFO] TF-IDF 矩阵计算完毕。开始并行提取 Top {TopNKeywords} 关键词...");
+            // -----------------------------
 
             // 使用 Parallel.For 模拟多进程/多线程加速
             Parallel.For(0, totalDocuments, new ParallelOptions { MaxDegreeOfParallelism = AnalyzerConfig.MaxConcurrentWorkers }, i =>
             {
                 var info = validDocuments[i];
-                var rowVector = tfidfMatrix[i]; // 获取当前文档的 TF-IDF 分值向量
                 
-                // 提取 Top N 关键词的逻辑 (对应 Python 源码中对矩阵行的处理)
-                var topTags = ExtractTopNTags(rowVector, featureNames);
-                
-                resultsMap.TryAdd(info.FilePath, topTags);
+                try
+                {
+                    var rowVector = tfidfMatrix[i]; // 获取当前文档的 TF-IDF 分值向量
+                    
+                    // 提取 Top N 关键词的逻辑 (对应 Python 源码中对矩阵行的处理)
+                    var topTags = ExtractTopNTags(rowVector, featureNames);
+                    
+                    resultsMap.TryAdd(info.FilePath, topTags);
 
-                // 实时预览/计数器
-                // Console.Write($"\rTF-IDF 进度: {resultsMap.Count}/{totalDocuments}");
+                    // 成功任务计数 +1 (线程安全)
+                    Interlocked.Increment(ref successCount);
+                    
+                }
+                catch (Exception ex)
+                {
+                    // 某个任务失败，记录异常警报
+                    string error_message = $"【TF-IDF 异常警报】任务失败，文件路径: {info.FilePath}。错误: {ex.Message}";
+                    Console.WriteLine(error_message);
+                    
+                    // 失败任务计数 +1 (线程安全)
+                    Interlocked.Increment(ref failedCount);
+                    
+                    // 失败的任务在结果集中标记为空列表
+                    resultsMap.TryAdd(info.FilePath, new List<string>());
+                }
+
+                // 实时进度反馈（模仿 tqdm，但仅是简单的计数覆盖）
+                // 仅在控制台运行时有效
+                // @@    136-136,137-137   @@ 修正：直接读取 int 变量
+                int completedCount = successCount + failedCount; 
+                if (completedCount % 100 == 0 || completedCount == totalDocuments) // 每处理100个或任务结束时更新
+                {
+                    Console.Write($"\rTF-IDF关键词提取: {completedCount}/{totalDocuments}");
+                }
             });
 
-            Console.WriteLine("\nTF-IDF 关键词提取完成。");
+            // 停止计时并获取总耗时
+            stopWatch.Stop();
+            double finalElapsedTime = stopWatch.Elapsed.TotalSeconds;
+
+            // 最终打印完成信息和计数器总结
+            Console.WriteLine($"\rTF-IDF关键词提取: {totalDocuments}/{totalDocuments} [完成]");
+            
+            string finalLog = (
+                $"【TF-IDF 计数器总结】总数量: {totalDocuments}，" +
+                $"成功: {successCount}，失败: {failedCount}。" +
+                $"总耗时: {finalElapsedTime:.2f} 秒。"
+            );
+            Console.WriteLine(finalLog);
+
             
             // 4. 收集最终结果 (转换为 Path -> TagList 字典)
             return resultsMap.ToDictionary(kv => kv.Key, kv => kv.Value);
@@ -111,7 +158,8 @@ namespace ImageAnalyzerCore
             
             // 创建一个模拟的 TF-IDF 矩阵
             double[][] matrix = new double[docCount][];
-            Random rand = new Random();
+            // 使用Guid作为随机种子，确保每个线程使用不同的随机序列，避免在Parallel中出现重复随机数
+            Random rand = new Random(Guid.NewGuid().GetHashCode()); 
 
             for (int i = 0; i < docCount; i++)
             {
@@ -154,7 +202,6 @@ namespace ImageAnalyzerCore
         /// 将 TF-IDF 关键词列表格式化为文件名后缀字符串。
         /// 对应 Python 源码中的 format_tfidf_tags_for_filename 函数。
         /// </summary>
-        // 修复：添加 tagDelimiter 参数，匹配 Program.cs 中的调用
         public static string FormatTfidfTagsForFilename(List<string> tagList, string tagDelimiter)
         {
             if (tagList == null || !tagList.Any())
