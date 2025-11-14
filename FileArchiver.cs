@@ -16,7 +16,7 @@ using Spectre.Console; // 引入Spectre.Console，用于控制台UI和进度条
 /// 归档文件夹："C:\stable-diffusion-webui\outputs\txt2img-images\历史"【固定】
 /// 
 /// 必须实现的重点要求：
-/// 警告！！！！需要保护的文件夹目录包含"超"，"精"，"特"三个关键词的文件夹目录下的图片文件不允许被归档，被移动。【重要，重点保护对象】
+/// 警告！！！！需要保护的文件夹目录包含"超"，"精"，"特"，"处"个关键词的文件夹目录下的图片文件不允许被归档，被移动。【重要，重点保护对象】
 /// 跳过整理“.bf”文件夹，这个文件夹是程序生成的一些缓存文件，不允许被移动。【非目标文件】
 /// 
 /// 目标：
@@ -44,7 +44,7 @@ namespace ImageAnalyzerCore
         private const string ArchiveTargetDir = @"C:\stable-diffusion-webui\outputs\txt2img-images\历史"; // 归档文件夹目录
         
         // 必须实现的重点要求：保护关键词
-        private static readonly List<string> ProtectedKeywords = new List<string> { "超", "精", "特" }; 
+        private static readonly List<string> ProtectedKeywords = new List<string> { "超", "精", "特", "处" }; // 新增“处”关键词
         // 跳过整理的文件夹
         private const string ExcludedFolderName = ".bf";
 
@@ -112,6 +112,9 @@ namespace ImageAnalyzerCore
 
             // 3. 打印最终统计结果 (细节要求 3)
             PrintFinalCounts(totalFiles);
+            
+            // 【新功能】 4. 清理空文件夹
+            CleanEmptyDirectories(RootDirectory, ArchiveTargetDir);
         }
         
         /// <summary>
@@ -166,7 +169,7 @@ namespace ImageAnalyzerCore
                 // 【修正点 1】检查保护关键词：在扫描阶段，应使用 IsPathProtected 来判断目录是否受保护。
                 if (IsPathProtected(dirPath, isDirectory: true))
                 {
-                    Console.WriteLine($"[SAFETY] 跳过受保护文件夹目录（包含'超/精/特'）: {dirPath}");
+                    Console.WriteLine($"[SAFETY] 跳过受保护文件夹目录（包含'超/精/特/处'）: {dirPath}");
                     _statusCounts.AddOrUpdate("安全跳过 (保护文件夹目录)", 1, (key, count) => count + 1);
                     continue; // 跳过整个受保护文件夹目录的文件收集
                 }
@@ -175,9 +178,8 @@ namespace ImageAnalyzerCore
                 // 收集当前目录下的所有文件 (并进行图片后缀过滤)
                 try
                 {
-                    //@@ 233,233 -1,1 @@
-                    //- var filesInDir = Directory.EnumerateFiles(dirPath, searchPattern, SearchOption.TopDirectoryOnly);
-                    var filesInDir = Directory.EnumerateFiles(dirPath, searchPattern, SearchOption.AllDirectories); // 修复：改为 AllDirectories 以递归扫描子文件夹
+                    // 修复：改为 AllDirectories 以递归扫描子文件夹
+                    var filesInDir = Directory.EnumerateFiles(dirPath, searchPattern, SearchOption.AllDirectories); 
                     foreach (var filePath in filesInDir)
                     {
                         if (IsImageFile(filePath))
@@ -351,6 +353,68 @@ namespace ImageAnalyzerCore
                 Console.WriteLine($"- {kvp.Key,-40}: {kvp.Value} 个");
             }
             Console.WriteLine("-----------------------------------");
+        }
+        
+        /// <summary>
+        /// [步骤 6] 清理空文件夹：在文件归档完成后，安全地删除所有空子文件夹。
+        /// 难度系数：3/10 (涉及递归扫描和安全删除检查)
+        /// </summary>
+        private void CleanEmptyDirectories(string rootDir, string archiveDir)
+        {
+            Console.WriteLine("\n--- 启动空文件夹清理流程 ---");
+            int deletedCount = 0;
+            
+            // 1. 获取所有子目录（递归），并按路径长度降序排序，实现从最深的子目录开始处理（自底向上）。
+            var allDirectories = Directory.EnumerateDirectories(rootDir, "*", SearchOption.AllDirectories)
+                                          .OrderByDescending(dir => dir.Length) 
+                                          .ToList();
+            
+            foreach (var dirPath in allDirectories)
+            {
+                // 2. 安全检查：跳过排除项和保护文件夹
+                string dirName = new DirectoryInfo(dirPath).Name;
+                
+                // 排除归档目录本身 (ArchiveTargetDir)
+                if (dirPath.Equals(archiveDir, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue; 
+                }
+
+                // 排除“.bf”文件夹
+                if (dirName.Equals(ExcludedFolderName, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+                
+                // 检查保护关键词 ("超", "精", "特", "处")
+                if (IsPathProtected(dirPath, isDirectory: true))
+                {
+                    continue;
+                }
+
+                // 3. 检查是否为空 (快速检查是否有任何文件或子目录)
+                if (!Directory.EnumerateFileSystemEntries(dirPath).Any())
+                {
+                    try
+                    {
+                        // 4. 执行删除 (高风险操作，必须try-catch)
+                        Directory.Delete(dirPath);
+                        Console.WriteLine($"[DELETE SUCCESS] 清理空文件夹: {dirPath}");
+                        deletedCount++;
+                    }
+                    catch (IOException)
+                    {
+                        // 常见错误：目录仍在被占用，或者权限问题，或者目录已经不是空了（被其他线程/进程写入）
+                        Console.WriteLine($"[DELETE FAIL] 无法清理（可能被占用或权限不足）: {dirPath}");
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"[FATAL DELETE ERROR] 清理空文件夹时发生未知错误: {dirPath}. 错误: {ex.Message}");
+                    }
+                }
+            }
+            
+            Console.WriteLine($"\n[INFO] 空文件夹清理完成。共删除 {deletedCount} 个空文件夹。");
         }
     }
 }
