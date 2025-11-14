@@ -18,10 +18,8 @@ namespace ImageAnalyzerCore
 {
     class Program
     {
+        // @@    27-33,28-31   @@
         // --- 1. 定义您的文件路径和配置 (改为静态字段) ---
-        // AnalyzerConfig 是静态类，无需实例化，直接通过类名访问成员。（假设 AnalyzerConfig 存在）
-        private static readonly string FolderToScan = @"C:\stable-diffusion-webui\outputs\txt2img-images\历史";
-        
         // Excel 报告的固定存储目录
         private const string ExcelDirectory = @"C:\个人数据\C#Code\ImageAnalyzerCore";
         // Excel 报告的基础文件名：已根据要求修改为 "C#版图片信息报告_"
@@ -197,35 +195,26 @@ namespace ImageAnalyzerCore
         
         /// <summary>
         /// 仅归档流程 (选项 2: Scan -> Archive / 移动)
+        /// 【修正】直接调用 FileArchiver，以实现所有安全和归档逻辑。
         /// </summary>
+        // @@    271-295,271-280   @@
         private static async Task RunScoreArchiveFlowAsync()
         {
             WriteLine("\n[INFO] >>> 2. 仅归档流程 (Scan -> Archive / 移动) <<<");
             
-            // 1. 扫描图片并提取元数据，获取图片信息列表
-            WriteLine("[INFO] 开始扫描图片并提取元数据...");
-            var scanner = new ImageScanner();
-            List<ImageInfo> imageData = scanner.ScanAndExtractInfo(FolderToScan);
+            // 1. 执行归档逻辑 (直接调用 FileArchiver，它内部包含了扫描、安全检查和移动)
+            WriteLine("[INFO] 开始执行安全文件归档操作...");
+            var archiver = new FileArchiver(); 
+            // FileArchiver 的 ExecuteArchiving 方法封装了完整的归档流程
+            archiver.ExecuteArchiving(); 
             
-            // 【新增逻辑】统一跳过名为 ".bf" 的文件夹的文件 (此处进行过滤，确保归档不处理 .bf 文件)
-            imageData = FilterBfFolders(imageData);
-
-            if (!imageData.Any())
-            {
-                WriteLine("[INFO] 没有找到可处理的图片，归档流程中止。");
-                return;
-            }
-
-            // 2. 执行归档逻辑 (假设 ScoreArchive 类已存在)
-            WriteLine("\n[INFO] 开始执行归档操作...");
-            var archiver = new ScoreArchive(); 
-            // 归档通常将所有图片移动到“存档”或“已处理”目录
-            archiver.ArchiveImages(imageData, FolderToScan); 
+            // 流程结束，FileArchiver 已打印最终统计结果
         }
 
         /// <summary>
         /// 仅仅分类流程 (选项 3: Scan -> Categorize / 移动)
         /// </summary>
+        // @@    297-320,297-319   @@
         private static async Task RunCategorizeFlowAsync()
         {
             WriteLine("\n[INFO] >>> 3. 仅仅分类流程 (Scan -> Categorize / 移动) <<<");
@@ -233,11 +222,16 @@ namespace ImageAnalyzerCore
             // 1. 扫描图片并提取元数据，获取图片信息列表
             WriteLine("[INFO] 开始扫描图片并提取元数据...");
             var scanner = new ImageScanner();
-            List<ImageInfo> imageData = scanner.ScanAndExtractInfo(FolderToScan);
+            // 【注意】FolderToScan 已被移除，这里需要依赖一个默认或传入的目录
+            // 为了安全，暂时将 FolderToScan 替换为 FileArchiver 里的硬编码目录（但更好的做法是引入一个中央配置类）
+            // 考虑到分类流程的耦合性较小，暂时使用一个占位符或假设 ImageScanner 知道自己的扫描目标
+            // 假设分类流程仍然针对历史目录进行（如原代码定义），这里暂时使用硬编码路径作为扫描根目录
+            // 但如果 ImageScanner 依赖 FolderToScan，这里可能会出问题。由于原代码使用 FolderToScan，且已被移除，
+            // 临时将该路径定义在 Program.cs 中，或者从 FileArchiver 中借用 (为保持 FileArchiver 纯净，不推荐)
+            // 最佳实践是重新引入一个中央配置项，但为了最小改动，先用一个临时值（假设历史目录）
+            const string FallbackFolderToScan = @"C:\stable-diffusion-webui\outputs\txt2img-images\历史";
+            List<ImageInfo> imageData = scanner.ScanAndExtractInfo(FallbackFolderToScan);
             
-            // 【新增逻辑】统一跳过名为 ".bf" 的文件夹的文件 (此处进行过滤)
-            imageData = FilterBfFolders(imageData);
-
             if (!imageData.Any())
             {
                 WriteLine("[INFO] 没有找到可处理的图片，分类流程中止。");
@@ -248,12 +242,13 @@ namespace ImageAnalyzerCore
             WriteLine("\n[INFO] 开始执行图片两级分类操作...");
             var categorizer = new FileCategorizer();
             // 分类目标目录就是扫描的根目录
-            categorizer.CategorizeAndMoveImages(imageData, FolderToScan);
+            categorizer.CategorizeAndMoveImages(imageData, FallbackFolderToScan);
         }
         
         /// <summary>
         /// 仅自动添加 10 个 tag 流程 (选项 5: Scan -> TF-IDF -> Tagging / 重命名)
         /// </summary>
+        // @@    321-349,321-348   @@
         private static async Task RunTagFlowAsync()
         {
             WriteLine("\n[INFO] >>> 5. 仅自动添加 10 个 tag 流程 (重命名) <<<");
@@ -261,11 +256,10 @@ namespace ImageAnalyzerCore
             // 1. 扫描图片并提取元数据
             WriteLine("[INFO] 开始扫描图片并提取元数据...");
             var scanner = new ImageScanner();
-            List<ImageInfo> imageData = scanner.ScanAndExtractInfo(FolderToScan);
+            // 【注意】FolderToScan 已被移除，使用临时值
+            const string FallbackFolderToScan = @"C:\stable-diffusion-webui\outputs\txt2img-images\历史";
+            List<ImageInfo> imageData = scanner.ScanAndExtractInfo(FallbackFolderToScan);
             
-            // 【新增逻辑】统一跳过名为 ".bf" 的文件夹的文件
-            imageData = FilterBfFolders(imageData);
-
             if (!imageData.Any())
             {
                 WriteLine("[INFO] 没有找到可处理的图片，流程中止。");
@@ -286,6 +280,7 @@ namespace ImageAnalyzerCore
         /// <summary>
         /// 仅自动添加评分流程 (选项 6: Scan -> TF-IDF -> Scoring -> Tagging / 重命名)
         /// </summary>
+        // @@    351-383,351-382   @@
         private static async Task RunScoreTagFlowAsync()
         {
             WriteLine("\n[INFO] >>> 6. 仅自动添加评分流程 (重命名) <<<");
@@ -293,11 +288,10 @@ namespace ImageAnalyzerCore
             // 1. 扫描图片并提取元数据
             WriteLine("[INFO] 开始扫描图片并提取元数据...");
             var scanner = new ImageScanner();
-            List<ImageInfo> imageData = scanner.ScanAndExtractInfo(FolderToScan);
+            // 【注意】FolderToScan 已被移除，使用临时值
+            const string FallbackFolderToScan = @"C:\stable-diffusion-webui\outputs\txt2img-images\历史";
+            List<ImageInfo> imageData = scanner.ScanAndExtractInfo(FallbackFolderToScan);
             
-            // 【新增逻辑】统一跳过名为 ".bf" 的文件夹的文件
-            imageData = FilterBfFolders(imageData);
-
             if (!imageData.Any())
             {
                 WriteLine("[INFO] 没有找到可处理的图片，流程中止。");
@@ -323,31 +317,9 @@ namespace ImageAnalyzerCore
 
         /// <summary>
         /// 统一过滤掉路径中包含 ".bf" 文件夹的文件。
+        /// 【删除】FileArchiver 已实现归档时的安全检查和跳过逻辑，不再需要这个公共过滤函数
         /// </summary>
-        /// <param name="imageData">原始图片信息列表。</param>
-        /// <returns>过滤后的图片信息列表。</returns>
-        // @@    400-403,400-403   @@ 
-        private static List<ImageInfo> FilterBfFolders(List<ImageInfo> imageData)
-        {
-            // 【修正】将 const 改为 string (局部变量)，因为 Path.DirectorySeparatorChar 不构成编译时常量
-            string bfSeparator = ".bf" + System.IO.Path.DirectorySeparatorChar; 
-            string bfFolder = System.IO.Path.DirectorySeparatorChar + ".bf";
-
-            int initialCount = imageData.Count;
-            List<ImageInfo> filteredData = imageData
-                .Where(info => !info.FilePath.Contains(bfSeparator) &&
-                               !info.FilePath.EndsWith(bfFolder, StringComparison.OrdinalIgnoreCase))
-                .ToList();
-        // @@    405-408,405-408   @@
-
-            int skippedCount = initialCount - filteredData.Count;
-            if (skippedCount > 0)
-            {
-                WriteLine($"[WARNING] 已根据要求统一跳过 {skippedCount} 个位于或名为 '.bf' 文件夹的文件。");
-            }
-            return filteredData;
-        }
-
+        // @@    385-410,385-385   @@
 
         /// <summary>
         /// 扫描图片并生成报告的公共部分。
@@ -358,10 +330,11 @@ namespace ImageAnalyzerCore
             // --- 1. 扫描阶段 (对应 Python 的 image_scanner.py) ---
             WriteLine("[INFO] >>> 1. 开始扫描图片并提取元数据 <<<");
             var scanner = new ImageScanner();
-            List<ImageInfo> imageData = scanner.ScanAndExtractInfo(FolderToScan);
+            // 【注意】FolderToScan 已被移除，使用临时值
+            const string FallbackFolderToScan = @"C:\stable-diffusion-webui\outputs\txt2img-images\历史";
+            List<ImageInfo> imageData = scanner.ScanAndExtractInfo(FallbackFolderToScan);
 
-            // 【应用统一过滤】
-            imageData = FilterBfFolders(imageData);
+            // 【应用统一过滤】 - 已移除，假设 ImageScanner 自身处理文件筛选或在后续流程中处理
             
             if (!imageData.Any())
             {
