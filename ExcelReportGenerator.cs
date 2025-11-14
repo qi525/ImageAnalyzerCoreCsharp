@@ -4,7 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using ClosedXML.Excel;
-using System.Diagnostics; // 新增：用于计时
+using System.Diagnostics; // 用于计时
 
 // 注意：确保 ImageAnalyzerCore 命名空间与 Program.cs 保持一致
 namespace ImageAnalyzerCore 
@@ -15,6 +15,25 @@ namespace ImageAnalyzerCore
     /// </summary>
     public static class ExcelReportGenerator
     {
+        // @@    19-21,19-21   @@
+        //         // Excel报告中使用的固定列宽值。
+        private const double FixedColumnWidth = 15.0; // 本地常量，不使用全局配置
+
+        // 【采纳用户字典结构】使用字典定义表头顺序和列宽，值全部引用本地常量
+        // @@    23-32,23-32   @@
+        private static readonly Dictionary<string, double> ColumnHeadersAndWidths = new Dictionary<string, double>
+        {
+            // 所有列宽值都使用 FixedColumnWidth (15.0)
+            { "序号", FixedColumnWidth }, 
+            { "文件名", FixedColumnWidth }, 
+            { "文件路径", FixedColumnWidth }, 
+            { "创建时间", FixedColumnWidth }, 
+            { "修改时间", FixedColumnWidth }, 
+            { "原始标签", FixedColumnWidth }, 
+            { AnalyzerConfig.CoreKeywordColumnName, FixedColumnWidth }, // 提取正向词的核心词
+            { "文件状态", FixedColumnWidth } 
+        };
+        
         /// <summary>
         /// 实际的 Excel 报告创建函数，使用 ClosedXML 写入数据。
         /// </summary>
@@ -40,16 +59,19 @@ namespace ImageAnalyzerCore
                 {
                     var worksheet = workbook.Worksheets.Add("图片信息报告");
 
-                    // 2. 写入表头 (使用 AnalyzerConfig 定义的列名)
-                    // 这是管理表头和格式的关键部分
-                    worksheet.Cell("A1").Value = "序号";
-                    worksheet.Cell("B1").Value = "文件名";
-                    worksheet.Cell("C1").Value = "文件路径";
-                    worksheet.Cell("D1").Value = "创建时间";
-                    worksheet.Cell("E1").Value = "修改时间";
-                    worksheet.Cell("F1").Value = "原始标签";
-                    worksheet.Cell("G1").Value = AnalyzerConfig.CoreKeywordColumnName; // 提取正向词的核心词
-                    worksheet.Cell("H1").Value = "文件状态";
+                    // 2. 写入表头 (使用 ColumnHeadersAndWidths 定义的列名和宽度)
+                    int columnIndex = 1;
+
+                    foreach (var header in ColumnHeadersAndWidths)
+                    {
+                        // 写入表头
+                        worksheet.Cell(1, columnIndex).Value = header.Key;
+                        
+                        // 设置固定列宽，引用字典中取出的值
+                        worksheet.Column(columnIndex).Width = header.Value;
+
+                        columnIndex++;
+                    }
                     
                     // 3. 写入数据行
                     for (int i = 0; i < imageData.Count; i++)
@@ -57,18 +79,19 @@ namespace ImageAnalyzerCore
                         var info = imageData[i];
                         int row = i + 2; // 数据从第 2 行开始
 
+                        // 确保数据写入顺序与表头一致
                         worksheet.Cell(row, 1).Value = i + 1; // 序号
                         worksheet.Cell(row, 2).Value = info.FileName;
                         worksheet.Cell(row, 3).Value = info.FilePath;
                         worksheet.Cell(row, 4).Value = info.CreationTime.ToString("yyyy-MM-dd HH:mm:ss");
                         worksheet.Cell(row, 5).Value = info.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss");
                         worksheet.Cell(row, 6).Value = info.ExtractedTagsRaw;
-                        worksheet.Cell(row, 7).Value = info.CoreKeywords;
+                        // 注意：这里需要确保 info.CoreKeywords 在 ReportGenerator 调用时已被 TfidfProcessor 填充
+                        worksheet.Cell(row, 7).Value = info.CoreKeywords; 
                         worksheet.Cell(row, 8).Value = info.Status;
                     }
 
-                    // 4. 格式化：自动调整列宽
-                    worksheet.Columns().AdjustToContents();
+                    // 4. 格式化：已通过循环设置固定宽度
 
                     // 5. 保存文件 (导出)
                     workbook.SaveAs(path);
