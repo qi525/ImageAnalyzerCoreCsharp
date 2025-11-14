@@ -21,7 +21,7 @@ namespace ImageAnalyzerCore
     {
         // 使用 ConcurrentDictionary 确保在 Parallel.ForEach 中的多线程安全性
         private static readonly ConcurrentDictionary<string, int> ConflictCounters = new ConcurrentDictionary<string, int>();
-        private static readonly ConcurrentDictionary<string, int> _statusCounts = new ConcurrentDictionary<string, int>(); // [新增] 用于统计重命名状态
+        private static readonly ConcurrentDictionary<string, int> _statusCounts = new ConcurrentDictionary<string, int>(); // 用于统计重命名状态
 
         /// <summary>
         /// [批量功能] 根据TF-IDF结果批量重命名文件。
@@ -30,7 +30,6 @@ namespace ImageAnalyzerCore
         /// <param name="imageData">ImageScanner扫描到的图片信息列表（包含 PredictedScore）。</param>
         /// <param name="tfidfTagsMap">TF-IDF处理器返回的关键词映射。</param>
         /// <param name="includeScore">【修复 Program.cs Bug #2】是否在文件名中包含预测评分。</param>
-        // @@    24-34,35-98   @@ 修复方法签名并重写实现逻辑
         public static void TagFiles(List<ImageInfo> imageData, Dictionary<string, List<string>> tfidfTagsMap, bool includeScore = false)
         {
             if (imageData == null || !imageData.Any())
@@ -72,10 +71,11 @@ namespace ImageAnalyzerCore
                 // 移除原文件名中可能存在的旧评分或标签，防止重复。
                 string baseName = RemoveExistingTagsAndScores(oldFileNameWithoutExt);
                 
-                // 新的文件名格式: [清理后的原文件名]_[评分部分]_[TF-IDF关键词]
+                // 新的文件名格式: [清理后的原文件名][评分部分]_[TF-IDF关键词]
                 string newFileNameWithoutExt = $"{baseName}{scorePrefix}_{tagString}";
                 
                 // 4. 处理文件名冲突和构建最终路径
+                // 这里调用了 EnsureUniqueFilename，它内部包含了防止重复的逻辑
                 string finalUniqueFileName = EnsureUniqueFilename(newFileNameWithoutExt, extension, info.DirectoryName);
                 string newFilePath = Path.Combine(info.DirectoryName, finalUniqueFileName);
 
@@ -106,6 +106,43 @@ namespace ImageAnalyzerCore
         }
 
         /// <summary>
+        /// [修复 Program.cs Bug] 确保文件名在目标目录下是唯一的，并在冲突时添加计数后缀 (例如 file (1).ext)。
+        /// </summary>
+        /// <param name="targetDir">目标目录的完整路径。</param>
+        /// <param name="filename">原始文件名 (包含扩展名，例如: image.png)。</param>
+        /// <returns>唯一的、带扩展名的文件名。</returns>
+        public static string GetUniqueFilename(string targetDir, string filename)
+        {
+            // 1. 检查文件是否已存在
+            string fullPath = Path.Combine(targetDir, filename);
+
+            if (!File.Exists(fullPath))
+            {
+                return filename;
+            }
+
+            string fileNameWithoutExt = Path.GetFileNameWithoutExtension(filename);
+            string ext = Path.GetExtension(filename);
+            int counter = 1;
+
+            string uniqueFilename;
+            string uniquePath;
+            
+            // 2. 循环直到找到唯一名称
+            do
+            {
+                // 构造带后缀的新文件名
+                uniqueFilename = $"{fileNameWithoutExt} ({counter}){ext}";
+                uniquePath = Path.Combine(targetDir, uniqueFilename);
+                counter++;
+            } 
+            // 循环条件：文件仍存在 且 计数器未超限 (安全保护)
+            while (File.Exists(uniquePath) && counter < 10000); 
+
+            return uniqueFilename;
+        }
+
+        /// <summary>
         /// 移除旧的评分和标签后缀，以获取干净的文件名基础。
         /// </summary>
         private static string RemoveExistingTagsAndScores(string baseName)
@@ -117,16 +154,13 @@ namespace ImageAnalyzerCore
             // 移除末尾可能的 _[标签组] 部分
             cleaned = Regex.Replace(cleaned, @"(_+[\w]+)*$", "", RegexOptions.IgnoreCase).TrimEnd('_');
 
-            // 移除文件名中可能存在的自定义评分前缀（如 @@@评分99.5）
-            // ⚠️ 假设 AnalyzerConfig.CustomScorePrefix 存在
-            // cleaned = Regex.Replace(cleaned, AnalyzerConfig.CustomScorePrefix + @"\d+(\.\d+)?", "", RegexOptions.IgnoreCase);
-
             return cleaned;
         }
 
 
         /// <summary>
         /// 确保新文件名在目标目录下是唯一的，并在冲突时添加计数后缀。
+        /// 此方法主要供 TagFiles 内部使用，处理已包含 TF-IDF 标签的文件名。
         /// </summary>
         private static string EnsureUniqueFilename(string newFileNameWithoutExt, string ext, string directoryName)
         {
@@ -143,15 +177,12 @@ namespace ImageAnalyzerCore
             string uniquePath;
             do
             {
-                // 在文件名后添加 (计数器) 后缀
                 string tentativeName = $"{cleanedBaseName} ({counter})";
                 uniquePath = Path.Combine(directoryName, tentativeName + ext);
                 counter++;
-            } while (File.Exists(uniquePath) && counter < 1000); // 防止无限循环
+            } while (File.Exists(uniquePath) && counter < 1000); 
 
             return Path.GetFileName(uniquePath);
         }
-
-        // ⚠️ 如果您的原始 FilenameTagger.cs 包含 FormatOriginalTags 或其他辅助方法，请将其合并到此文件中。
     }
 }
