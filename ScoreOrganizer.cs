@@ -28,7 +28,8 @@ namespace ImageAnalyzerCore // 确保与 Program.cs 命名空间一致
     /// <item>扫描源目录下的所有图片文件，并在扫描时排除所有名为 ".bf" 的文件夹。</item>
     /// <item>通过 ExtractScore 方法提取文件名中的评分。</item>
     /// <item>检查文件是否位于受保护目录中，以确保操作安全。</item>
-    /// <item>执行文件移动操作，并提供详细的日志记录和计数总结。</item>
+    /// <item>执行文件移动操作。**移动成功的详细日志将写入 score_organizer.log 文件。**</item>
+    /// <item>提供详细的日志记录和计数总结。</item>
     /// </list>
     /// </summary>
     public class ScoreOrganizer
@@ -176,6 +177,16 @@ namespace ImageAnalyzerCore // 确保与 Program.cs 命名空间一致
         public void OrganizeFiles(string scoreInput)
         {
             
+            // [新增逻辑] 任务开始前，清空或创建日志文件，确保日志内容是当前任务的。
+            try
+            {
+                File.WriteAllText(LogFile, $"--- 文件整理任务开始：{DateTime.Now} ---\r\n");
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, $"初始化日志文件失败: {LogFile}");
+            }
+
             // 1. 安全检查和范围解析
             if (!Directory.Exists(SourceRootDir))
             {
@@ -229,9 +240,8 @@ namespace ImageAnalyzerCore // 确保与 Program.cs 命名空间一致
             {
                 string filePath = allFilesToCheck[i];
                 string filename = Path.GetFileName(filePath);
-
-                // 实时预览：打印进度日志
-                Log.Info($"[{i + 1}/{totalFilesToCheck}] 正在检查: {filename}");
+                
+                // 实时预览：已移除逐个文件的进度日志，过程日志全部移至 LogFile。
                 
                 // 【安全检查】检查文件是否在受保护目录中
                 if (IsPathProtected(filePath))
@@ -246,8 +256,7 @@ namespace ImageAnalyzerCore // 确保与 Program.cs 命名空间一致
                 
                 if (score == null)
                 {
-                    // 使用 WriteLine 而非 Log.Debug，以简化处理
-                    WriteLine($"[DEBUG] 跳过：文件 '{filename}' 中未找到 '评分XX' 信息。"); 
+                    // 未找到评分的文件，跳过 (过程日志已移除)
                     skippedFiles++;
                     continue;
                 }
@@ -278,8 +287,8 @@ namespace ImageAnalyzerCore // 确保与 Program.cs 命名空间一致
                         else
                         {
                             File.Move(filePath, targetFilePath);
+                            AppendToLogFile($"⭐ 成功移动: '{filename}' -> '{targetDirName}'"); // 日志写入文件
                             successfulMoves++;
-                            Log.Info($"⭐ 成功移动: '{filename}' -> '{targetDirName}'");
                         }
                     }
                     catch (Exception e)
@@ -290,7 +299,7 @@ namespace ImageAnalyzerCore // 确保与 Program.cs 命名空间一致
                 }
                 else
                 {
-                    WriteLine($"[DEBUG] 跳过：评分 {score} 不在目标范围 {targetScores} 内。");
+                    // 评分不在目标范围内的文件，跳过 (过程日志已移除)
                     skippedFiles++;
                 }
             }
@@ -326,6 +335,16 @@ namespace ImageAnalyzerCore // 确保与 Program.cs 命名空间一致
             {
                 Log.Error(e, "自动打开日志文件失败。");
             }
+        }
+
+        /// <summary>
+        /// 私有辅助方法，将成功移动的日志写入到日志文件中。
+        /// </summary>
+        private void AppendToLogFile(string message)
+        {
+            // 使用 File.AppendAllText 确保日志行被添加到文件末尾
+            // 使用 \r\n 确保 Windows 平台的换行符正确
+            File.AppendAllText(LogFile, message + "\r\n");
         }
         
         // --- 新增工具函数：用于排除特定文件夹的递归文件查找 ---
