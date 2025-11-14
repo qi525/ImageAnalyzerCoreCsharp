@@ -41,7 +41,7 @@ namespace ImageAnalyzerCore
                 string excelPath = Path.Combine(ExcelDirectory, finalExcelFileName);
                 
                 DisplayMenu();
-                Write("请输入您的选择 (1-5): "); // 菜单项已增至 5
+                Write("请输入您的选择 (1-7): "); // 菜单项已增至 7
                 // Bug Fix: 使用 ?? string.Empty 确保 choice 永远是不可为 null 的 string
                 string choice = ReadLine()?.Trim() ?? string.Empty; 
 
@@ -68,10 +68,18 @@ namespace ImageAnalyzerCore
                             await RunScoreOrganizerFlowAsync();
                             break;
                         case "5":
+                            // 选项 5: 仅运行归档流程 (Scan -> Archive)
+                            await RunScoreArchiveFlowAsync();
+                            break;
+                        case "6":
+                            // 选项 6: 仅仅分类流程 (Scan -> Categorize)
+                            await RunCategorizeFlowAsync();
+                            break;
+                        case "7":
                             WriteLine("[INFO] 退出程序。");
                             return;
                         default:
-                            WriteLine("[WARNING] 无效的选项，请重新输入 1-5 之间的数字。"); // 提示更新
+                            WriteLine("[WARNING] 无效的选项，请重新输入 1-7 之间的数字。"); // 提示更新
                             break;
                     }
                     WriteLine("\n-----------------------------------\n");
@@ -93,8 +101,10 @@ namespace ImageAnalyzerCore
             WriteLine("  1. 完整流程 (扫描 -> 关键词提取 -> 报告生成 -> 评分预测)");
             WriteLine("  2. 只生成 Excel 报告 (跳过扫描和关键词提取，但需要预先的数据缓存)");
             WriteLine("  3. 仅扫描和报告生成 (只运行扫描，不进行关键词提取和评分，完成后自动打开报告)");
-            WriteLine("  4. 指定评分图片移动到外层 (Score Organizer)"); // 新增选项
-            WriteLine("  5. 退出程序"); // 退出选项改为 5
+            WriteLine("  4. 指定评分图片移动到外层 (Score Organizer)"); 
+            WriteLine("  5. 仅归档 (Scan -> Archive)"); // 新增选项 5
+            WriteLine("  6. 仅仅分类 (Scan -> Categorize)"); // 新增选项 6
+            WriteLine("  7. 退出程序"); // 退出选项改为 7
         }
 
         /// <summary>
@@ -150,7 +160,7 @@ namespace ImageAnalyzerCore
         }
 
         /// <summary>
-        /// 指定评分图片移动到外层流程 (选项 4)
+        /// 指定评分图片移动到外层流程 (选项 4 - 评分整理)
         /// </summary>
         private static async Task RunScoreOrganizerFlowAsync()
         {
@@ -169,6 +179,7 @@ namespace ImageAnalyzerCore
             
             if (!string.IsNullOrEmpty(userInput))
             {
+                // 注意: 评分整理功能通常不需要先扫描，因为它直接操作文件系统
                 organizer.OrganizeFiles(userInput);
             }
             else
@@ -177,6 +188,56 @@ namespace ImageAnalyzerCore
             }
         }
         
+        /// <summary>
+        /// **[新增]** 仅归档流程 (选项 5: Scan -> Archive)
+        /// </summary>
+        private static async Task RunScoreArchiveFlowAsync()
+        {
+            WriteLine("\n[INFO] >>> 5. 仅归档流程 (Scan -> Archive) <<<");
+            
+            // 1. 扫描图片并提取元数据，获取图片信息列表
+            WriteLine("[INFO] 开始扫描图片并提取元数据...");
+            var scanner = new ImageScanner();
+            List<ImageInfo> imageData = scanner.ScanAndExtractInfo(FolderToScan);
+            
+            if (!imageData.Any())
+            {
+                WriteLine("[INFO] 没有找到可处理的图片，归档流程中止。");
+                return;
+            }
+
+            // 2. 执行归档逻辑 (假设 ScoreArchive 类已存在)
+            WriteLine("\n[INFO] 开始执行归档操作...");
+            var archiver = new ScoreArchive(); 
+            // 归档通常将所有图片移动到“存档”或“已处理”目录
+            archiver.ArchiveImages(imageData, FolderToScan); 
+        }
+
+        /// <summary>
+        /// **[新增]** 仅仅分类流程 (选项 6: Scan -> Categorize)
+        /// </summary>
+        private static async Task RunCategorizeFlowAsync()
+        {
+            WriteLine("\n[INFO] >>> 6. 仅仅分类流程 (Scan -> Categorize) <<<");
+
+            // 1. 扫描图片并提取元数据，获取图片信息列表
+            WriteLine("[INFO] 开始扫描图片并提取元数据...");
+            var scanner = new ImageScanner();
+            List<ImageInfo> imageData = scanner.ScanAndExtractInfo(FolderToScan);
+            
+            if (!imageData.Any())
+            {
+                WriteLine("[INFO] 没有找到可处理的图片，分类流程中止。");
+                return;
+            }
+
+            // 2. 执行分类逻辑 (使用 FileCategorizer)
+            WriteLine("\n[INFO] 开始执行图片两级分类操作...");
+            var categorizer = new FileCategorizer();
+            // 分类目标目录就是扫描的根目录
+            categorizer.CategorizeAndMoveImages(imageData, FolderToScan);
+        }
+
         /// <summary>
         /// 扫描图片并生成报告的公共部分。
         /// </summary>
