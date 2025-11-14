@@ -19,6 +19,18 @@ namespace ImageAnalyzerCore // 确保与 Program.cs 命名空间一致
         public static void Error(Exception ex, string message) => WriteLine($"[ERROR] {message} 错误: {ex.Message}");
     }
 
+    /// <summary>
+    /// ScoreOrganizer 类负责根据文件名中的评分信息（例如 "评分85"），
+    /// 将符合用户指定评分范围的图片文件从源目录（SourceRootDir）移动到目标基础目录（TargetBaseDir）下的对应评分文件夹中（例如 "评分85"）。
+    /// <para>核心功能包括：</para>
+    /// <list type="bullet">
+    /// <item>根据用户输入解析目标评分集合（ParseScoreInput）。</item>
+    /// <item>扫描源目录下的所有图片文件，并在扫描时排除所有名为 ".bf" 的文件夹。</item>
+    /// <item>通过 ExtractScore 方法提取文件名中的评分。</item>
+    /// <item>检查文件是否位于受保护目录中，以确保操作安全。</item>
+    /// <item>执行文件移动操作，并提供详细的日志记录和计数总结。</item>
+    /// </list>
+    /// </summary>
     public class ScoreOrganizer
     {
         // --- 配置项 (与 Python 脚本保持一致) ---
@@ -191,14 +203,15 @@ namespace ImageAnalyzerCore // 确保与 Program.cs 命名空间一致
             List<string> allFilesToCheck = new List<string>();
 
             foreach (var pattern in searchPatterns)
-            {
+            { 
                 try
                 {
-                    allFilesToCheck.AddRange(Directory.EnumerateFiles(SourceRootDir, pattern, SearchOption.AllDirectories));
+                    // 使用自定义函数递归获取文件列表，并排除 ".bf" 文件夹
+                    allFilesToCheck.AddRange(EnumerateFilesExcludingDotBf(SourceRootDir, pattern));
                 }
                 catch (UnauthorizedAccessException ex)
                 {
-                    Log.Error(ex, $"权限不足，无法访问目录: {SourceRootDir}");
+                    Log.Error(ex, $"权限不足，无法访问源目录: {SourceRootDir}");
                     return;
                 }
                 catch (DirectoryNotFoundException)
@@ -313,6 +326,47 @@ namespace ImageAnalyzerCore // 确保与 Program.cs 命名空间一致
             {
                 Log.Error(e, "自动打开日志文件失败。");
             }
+        }
+        
+        // --- 新增工具函数：用于排除特定文件夹的递归文件查找 ---
+
+        /// <summary>
+        /// 递归查找指定目录下的文件，并排除所有名为 ".bf" 的文件夹。
+        /// </summary>
+        private IEnumerable<string> EnumerateFilesExcludingDotBf(string rootPath, string searchPattern)
+        {
+            var fileList = new List<string>();
+
+            // 1. 查找当前目录下的文件
+            try
+            {
+                fileList.AddRange(Directory.EnumerateFiles(rootPath, searchPattern, SearchOption.TopDirectoryOnly));
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                Log.Error(ex, $"权限不足，无法访问目录: {rootPath}");
+            }
+
+            // 2. 查找当前目录下的子目录并递归处理
+            try
+            {
+                foreach (var subDir in Directory.EnumerateDirectories(rootPath, "*", SearchOption.TopDirectoryOnly))
+                {
+                    string dirName = Path.GetFileName(subDir);
+                    if (dirName.Equals(".bf", StringComparison.OrdinalIgnoreCase))
+                    {
+                        Log.Info($"跳过排除目录: {subDir}");
+                        continue; // 排除 .bf 文件夹
+                    }
+                    fileList.AddRange(EnumerateFilesExcludingDotBf(subDir, searchPattern));
+                }
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                Log.Error(ex, $"权限不足，无法访问目录结构: {rootPath}");
+            }
+
+            return fileList;
         }
     }
 }
