@@ -7,6 +7,27 @@ using System.Linq;
 using System.Collections.Concurrent;
 using System.Threading.Tasks;
 
+
+/// 流程说明【流程说明不可删除！！！】：
+/// 文件目录说明：
+/// 需要整理的文件夹："C:\stable-diffusion-webui\outputs\txt2img-images"【固定】
+/// 归档文件夹："C:\stable-diffusion-webui\outputs\txt2img-images\历史"【固定】
+/// 
+/// 必须实现的重点要求：
+/// 警告！！！！需要保护的文件夹包含"超"，"精"，"特"三个关键词的文件夹的文件不允许被归档，被移动。【重要，重点保护对象】
+/// 跳过整理“.bf”文件夹，这个文件夹是程序生成的一些缓存文件，不允许被移动。【非目标文件】
+/// 
+/// 目标：
+/// 归档的文件范围："归档文件夹"的同层级的文件夹中的所有文件。
+/// 归档的文件需要放到文件对应的文件夹，例如"2025-11-15"【文件夹格式：yyyy-mm-dd】
+/// 
+/// 细节要求：
+/// ！！！为了保护特定文件夹的内容
+/// 1. 使用一个专门用于移动的函数，实现文件的移动和归档。
+/// 2. 不仅要在主流程上进行跳过保护文件夹的检查，还要在移动函数中再次进行检查，确保万无一失。
+/// 3. 控制台打印最终实现归档的文件数量，成功数量和失败数量。
+/// 
+/// 
 namespace ImageAnalyzerCore
 {
     /// <summary>
@@ -18,8 +39,8 @@ namespace ImageAnalyzerCore
     {
         // --- 配置 ---
         // TODO: ❗ 请根据您的实际需求修改此归档目标路径 ❗
-        // 默认将文件移动到与扫描目录同级的“已归档”文件夹
-        private const string ArchiveTargetDir = @"C:\stable-diffusion-webui\outputs\txt2img-images\已归档";
+        // 默认将文件移动到与扫描目录同级的“历史”文件夹
+        private const string ArchiveTargetDir = @"C:\stable-diffusion-webui\outputs\txt2img-images\历史";
         
         // 用于记录处理状态和计数的并发字典（满足计数器要求）
         private readonly ConcurrentDictionary<string, int> _statusCounts = new ConcurrentDictionary<string, int>();
