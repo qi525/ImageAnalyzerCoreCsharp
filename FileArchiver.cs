@@ -85,7 +85,15 @@ namespace ImageAnalyzerCore
 
             // 2. 并行处理文件
             // 使用 ShellProgressBar 实现类似 tqdm 的实时预览
-            var options = new ProgressBarOptions { ForegroundColor = ConsoleColor.Yellow, BackgroundColor = ConsoleColor.DarkGray, ProgressBarOnBottom = true };
+            // 【修改点 1】：隐藏预估剩余时间，节省右侧空间，优先显示已用时间
+            var options = new ProgressBarOptions 
+            { 
+                ForegroundColor = ConsoleColor.Yellow, 
+                BackgroundColor = ConsoleColor.DarkGray, 
+                ProgressBarOnBottom = true,
+                DisplayTimeInRealTime = false, // 减少实时更新的开销和潜在截断问题
+                ShowEstimatedDuration = false // 隐藏预估剩余时间，释放空间以显示完整的“已用时间”
+            };
             using (_progressBar = new ProgressBar(totalFiles, "图片文件归档中...", options))
             {
                 Parallel.ForEach(filesToArchive, new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount }, filePath =>
@@ -94,7 +102,8 @@ namespace ImageAnalyzerCore
                 });
 
                 // 确保进度条完成
-                _progressBar.Message = "归档完成。";
+                // 【修改点 3】：使用 PadRight 填充空格，强制消息占据一定宽度，避免进度条主体挤压计时器。
+                _progressBar.Message = "归档完成。".PadRight(10, ' ');
             }
 
             // 3. 打印最终统计结果 (细节要求 3)
@@ -153,7 +162,7 @@ namespace ImageAnalyzerCore
                 if (IsPathProtected(dirPath, isDirectory: true))
                 {
                     Console.WriteLine($"[SAFETY] 跳过受保护文件夹目录（包含'超/精/特'）: {dirPath}");
-                    _statusCounts.AddOrUpdate("安全跳过 (保护目录)", 1, (key, count) => count + 1);
+                    _statusCounts.AddOrUpdate("安全跳过 (保护文件夹目录)", 1, (key, count) => count + 1);
                     continue; // 跳过整个受保护文件夹目录的文件收集
                 }
                 // 【修正点 1 结束】
@@ -331,8 +340,8 @@ namespace ImageAnalyzerCore
             var sortedCounts = _statusCounts.OrderByDescending(kv => kv.Value);
             foreach (var kvp in sortedCounts)
             {
-                // 使用 -30 确保对齐
-                Console.WriteLine($"- {kvp.Key,-30}: {kvp.Value} 个");
+                // 【修改点 2】：增加对齐宽度到 -40，以应对双字节中文和长状态名
+                Console.WriteLine($"- {kvp.Key,-40}: {kvp.Value} 个");
             }
             Console.WriteLine("-----------------------------------");
         }
