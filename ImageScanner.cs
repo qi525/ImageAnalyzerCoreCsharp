@@ -19,6 +19,17 @@ using MetadataExtractor.Formats.Xmp;
 using MetadataExtractor.Formats.WebP; 
 using MetadataExtractor.Formats.Iptc; 
 
+/// 获取图片文件所有注释信息：的PNGINFO，exif
+/// 从注释信息提取各种信息
+/// 从注释信息提取正向关键词，负面关键词，其他设置，模型，等等
+/// 统计正面关键词的字数
+/// 从正向关键词提取核心关键词，通过去除默认词和风格词等方式
+/// 
+/// 风格词是一整串一整串的词，用于优化，但是没有实际意义，比如 "masterpiece, best quality, realistic, detailed, intricate details, 8k, highres, award winning, ultra detailed, finely detailed, cinematic lighting, photorealistic, volumetric lighting, sharp focus, depth of field, bokeh, film grain" 这一串词
+/// 自动获取风格词，用"1girl"进行切割整个正向关键词，留下前面一段，如果重复出现超过10次，则缓存成为默认风格词，默认风格词的总长度要求是30个字符以上
+/// 自动获取的风格词长度各不相同，有的很短，有的很长，但是以长度最长的进行从上到下进行匹配，匹配成功就进行移除这个风格词后，剩下的部分再进行下一轮匹配，直到无法匹配为止
+/// 
+
 namespace ImageAnalyzerCore
 {
     // 结构体：用于存储单张图片的所有分析信息，对应 Python 中的 Dict[str, Any]
