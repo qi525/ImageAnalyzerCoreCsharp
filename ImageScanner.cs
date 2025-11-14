@@ -33,6 +33,8 @@ namespace ImageAnalyzerCore
         public string CoreKeywords { get; set; } = string.Empty;      // 核心关键词字符串 (用于Excel L列)
         public DateTime CreationTime { get; set; }
         public DateTime LastWriteTime { get; set; }
+        // @@    40-40,41-41   @@ 增加一行
+        public float PredictedScore { get; set; } = 0.0f; // [新增] 用于存储 ImageScorer 预测的最终分数
         public string Status { get; set; } = "待处理";
     }
 
@@ -69,6 +71,8 @@ namespace ImageAnalyzerCore
                 foreach (var filePath in allFiles)
                 {
                     string extension = Path.GetExtension(filePath).ToLowerInvariant();
+                    // ⚠️ 需要 AnalyzerConfig.ImageExtensions 存在于某个可访问的类中
+                    // 假设 AnalyzerConfig 是一个静态类，包含 ImageExtensions 属性
                     if (AnalyzerConfig.ImageExtensions.Contains(extension))
                     {
                         imagePaths.Add(filePath);
@@ -90,6 +94,7 @@ namespace ImageAnalyzerCore
 
             var imageData = new ConcurrentBag<ImageInfo>();
             
+            // ⚠️ 需要 AnalyzerConfig.MaxConcurrentWorkers 存在于某个可访问的类中
             WriteLine($"\n[INFO] 检测到 {totalImages} 个图片文件。使用 {AnalyzerConfig.MaxConcurrentWorkers} 个线程并行扫描元数据...");
 
             // [多线程实现] 使用 Parallel.ForEach 进行并行处理
@@ -185,6 +190,7 @@ namespace ImageAnalyzerCore
                 if (!string.IsNullOrWhiteSpace(rawTags) && !rawTags.StartsWith("Metadata_Read_Failed"))
                 {
                     info.CleanedTags = Regex.Replace(rawTags, @"[\n\r]+", " ", RegexOptions.None).Trim(); 
+                    // ⚠️ 需要 AnalyzerConfig.PositivePromptStopWords 存在于某个可访问的类中
                     info.CoreKeywords = ExtractCoreKeywords(info.CleanedTags); 
                 }
                 else
