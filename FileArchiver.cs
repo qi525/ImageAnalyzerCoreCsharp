@@ -6,6 +6,7 @@ using System.IO;
 using System.Linq;
 using System.Collections.Concurrent;
 using System.Threading.Tasks;
+using ShellProgressBar; // 引入进度条库
 
 
 /// 流程说明【流程说明不可删除！！！】
@@ -49,6 +50,9 @@ namespace ImageAnalyzerCore
         // 用于记录处理状态和计数的并发字典（满足计数器要求）
         private readonly ConcurrentDictionary<string, int> _statusCounts = new ConcurrentDictionary<string, int>();
 
+        // 进度条实例
+        private IProgressBar _progressBar;
+
         /// <summary>
         /// [步骤 1] 启动归档主流程，负责调用所有子步骤并打印最终统计结果。
         /// </summary>
@@ -77,10 +81,18 @@ namespace ImageAnalyzerCore
             }
 
             // 2. 并行处理文件
-            Parallel.ForEach(filesToArchive, new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount }, filePath =>
+            // 使用 ShellProgressBar 实现类似 tqdm 的实时预览
+            var options = new ProgressBarOptions { ForegroundColor = ConsoleColor.Yellow, BackgroundColor = ConsoleColor.DarkGray, ProgressBarOnBottom = true };
+            using (_progressBar = new ProgressBar(totalFiles, "文件归档中...", options))
             {
-                ProcessFileForArchiving(filePath);
-            });
+                Parallel.ForEach(filesToArchive, new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount }, filePath =>
+                {
+                    ProcessFileForArchiving(filePath);
+                });
+
+                // 确保进度条完成
+                _progressBar.Message = "归档完成。";
+            }
 
             // 3. 打印最终统计结果 (细节要求 3)
             PrintFinalCounts(totalFiles);
@@ -113,13 +125,14 @@ namespace ImageAnalyzerCore
                     continue;
                 }
                 
-                // 检查保护关键词 (主流程检查 - 细节要求 2)
-                if (IsPathProtected(dirPath))
+                // 【修正点 1】检查保护关键词：在扫描阶段，应使用 IsPathProtected 来判断目录是否受保护。
+                if (IsPathProtected(dirPath, isDirectory: true))
                 {
                     Console.WriteLine($"[SAFETY] 跳过受保护文件夹（包含'超/精/特'）: {dirPath}");
                     _statusCounts.AddOrUpdate("安全跳过 (保护路径)", 1, (key, count) => count + 1);
-                    continue;
+                    continue; // 跳过整个受保护目录的文件收集
                 }
+                // 【修正点 1 结束】
 
                 // 收集当前目录下的所有文件
                 try
@@ -150,16 +163,20 @@ namespace ImageAnalyzerCore
             if (!File.Exists(filePath))
             {
                 _statusCounts.AddOrUpdate("跳过 (文件丢失)", 1, (key, count) => count + 1);
+                _progressBar?.Tick(); // 文件处理完成，更新进度条
                 return;
             }
 
-            // 二次安全检查（在移动函数中再次检查源目录，确保万无一失 - 细节要求 2）
-            if (IsPathProtected(filePath))
+            // 二次安全检查（在移动函数中再次检查源目录，确保万无失一 - 细节要求 2）
+            // 【修正点 2】此处传入的是文件路径，isDirectory=false (默认值)
+            if (IsPathProtected(filePath, isDirectory: false))
             {
                 // 虽然在 ScanFilesToArchive 中已检查，但这里是针对文件本身路径的二次检查，用于确保逻辑正确性
                 _statusCounts.AddOrUpdate("安全跳过 (二次检查)", 1, (key, count) => count + 1);
+                _progressBar?.Tick(); // 文件处理完成，更新进度条
                 return;
             }
+            // 【修正点 2 结束】
 
             // 目标：归档的文件需要放到文件对应的文件夹，例如"2025-11-15"【文件夹格式：yyyy-mm-dd】
             string todayDate = DateTime.Now.ToString("yyyy-MM-dd");
@@ -170,15 +187,28 @@ namespace ImageAnalyzerCore
         }
 
         /// <summary>
-        /// [子函数 A] 检查路径是否被配置为受保护路径（包含"超","精","特"），不允许自动移动。
+        /// [子函数 A] 检查文件/目录路径是否被配置为受保护路径（包含"超","精","特"），不允许自动移动。
         /// (细节要求 2：检查逻辑)
         /// </summary>
-        private static bool IsPathProtected(string filePath)
+        /// <param name="path">文件或目录的完整路径。</param>
+        /// <param name="isDirectory">如果传入的是目录路径，则设置为 true。</param>
+        private static bool IsPathProtected(string path, bool isDirectory = false)
         {
-            if (string.IsNullOrWhiteSpace(filePath)) return false;
+            if (string.IsNullOrWhiteSpace(path)) return false;
+            
+            string directoryName;
 
-            // 获取文件所在的目录名 (e.g., "精选图片" -> "精选图片")
-            string directoryName = new DirectoryInfo(Path.GetDirectoryName(filePath) ?? string.Empty).Name;
+            if (isDirectory)
+            {
+                // 【修正点 3】如果传入的是目录，直接获取其名称进行检查
+                directoryName = new DirectoryInfo(path).Name;
+            }
+            else
+            {
+                // 【修正点 3】如果传入的是文件，获取文件所在的目录名
+                directoryName = new DirectoryInfo(Path.GetDirectoryName(path) ?? string.Empty).Name;
+            }
+            // 【修正点 3 结束】
 
             if (string.IsNullOrEmpty(directoryName)) return false;
 
@@ -219,6 +249,7 @@ namespace ImageAnalyzerCore
                 {
                     Console.WriteLine($"[WARN] 目标文件已存在: {targetPath}，跳过归档以避免覆盖。");
                     _statusCounts.AddOrUpdate("跳过 (目标冲突)", 1, (key, count) => count + 1);
+                    _progressBar?.Tick(); // 移动跳过，更新进度条
                     return;
                 }
                 
@@ -226,11 +257,13 @@ namespace ImageAnalyzerCore
                 if (sourcePath.Equals(targetPath, StringComparison.OrdinalIgnoreCase))
                 {
                     _statusCounts.AddOrUpdate("跳过 (路径相同)", 1, (key, count) => count + 1);
+                    _progressBar?.Tick(); // 移动跳过，更新进度条
                     return;
                 }
 
                 // 5. 执行移动操作
                 File.Move(sourcePath, targetPath);
+                _progressBar?.Tick(); // 【进度条更新】成功移动，更新进度条
                 _statusCounts.AddOrUpdate("成功归档", 1, (key, count) => count + 1);
                 // Console.WriteLine($"[MOVE] 成功归档: {sourcePath} -> {targetPath}"); // 移动成功日志太多，仅记录计数
             }
@@ -238,6 +271,7 @@ namespace ImageAnalyzerCore
             {
                 Console.WriteLine($"[ERROR] 归档文件失败: {sourcePath}. 错误: {ex.Message}");
                 _statusCounts.AddOrUpdate("移动失败/异常", 1, (key, count) => count + 1);
+                _progressBar?.Tick(); // 【进度条更新】移动失败，更新进度条
             }
         }
         
