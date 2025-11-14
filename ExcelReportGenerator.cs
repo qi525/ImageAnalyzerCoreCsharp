@@ -24,18 +24,18 @@ namespace ImageAnalyzerCore
         private const double FixedColumnWidth = 15.0; // 本地常量，不使用全局配置
 
         // 【重构点 1：更新列头顺序和名称】使用字典定义表头顺序和列宽，值全部引用本地常量
-        // @@    23-32,23-34   @@ 更新 ColumnHeadersAndWidths 字典
+        // @@    23-34,23-34   @@ 
         private static readonly Dictionary<string, double> ColumnHeadersAndWidths = new Dictionary<string, double>
         {
             // 所有列宽值都使用 FixedColumnWidth (15.0)
             { "序号", FixedColumnWidth }, 
             { "文件名", FixedColumnWidth }, 
-            { "文件所在文件夹", FixedColumnWidth }, // <-- 新增列
+            { "文件所在文件夹", FixedColumnWidth }, 
             { "文件路径", FixedColumnWidth }, 
             { "创建时间", FixedColumnWidth }, 
             { "修改时间", FixedColumnWidth }, 
-            { "原始标签", FixedColumnWidth }, 
-            { "提取正向词的核心词", FixedColumnWidth }, // <-- 显式使用用户指定的列名
+            { "正向词", FixedColumnWidth }, // <-- 修复：将 "原始标签" 改为 "正向词"
+            { "提取正向词的核心词", FixedColumnWidth }, 
             { "文件状态", FixedColumnWidth }
         };
 
@@ -83,24 +83,24 @@ namespace ImageAnalyzerCore
                     int row = 1; // 从第二行开始写入数据
                     
                     // 【重构点 2：调整数据写入的列索引】
-                    // @@    68-77,68-79   @@ 调整数据写入的列索引
+                    // @@    70-79,70-79   @@ 调整数据写入的列索引，确保与新的列名和顺序匹配
                     foreach (var info in imageData)
                     {
                         row++;
                         worksheet.Cell(row, 1).Value = row - 1; // 序号
                         worksheet.Cell(row, 2).Value = info.FileName;
-                        worksheet.Cell(row, 3).Value = info.DirectoryName; // <-- 新增：文件所在文件夹
+                        worksheet.Cell(row, 3).Value = info.DirectoryName; // 文件所在文件夹
                         worksheet.Cell(row, 4).Value = info.FilePath;
                         worksheet.Cell(row, 5).Value = info.CreationTime.ToString("yyyy-MM-dd HH:mm:ss");
                         worksheet.Cell(row, 6).Value = info.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss");
-                        worksheet.Cell(row, 7).Value = info.ExtractedTagsRaw;
+                        worksheet.Cell(row, 7).Value = info.ExtractedTagsRaw; // 正向词 (原原始标签)
                         worksheet.Cell(row, 8).Value = info.CoreKeywords; // 提取正向词的核心词
                         worksheet.Cell(row, 9).Value = info.Status; // 文件状态
                     }
 
                     // 4. 格式化：调整列以适应内容长度 (例如，路径、标签列可以设置为 AutoFit)
                     // AutoFit 可能会覆盖固定宽度，所以谨慎使用
-                    worksheet.Column(7).AdjustToContents(); // 原始标签列，通常较长
+                    worksheet.Column(7).AdjustToContents(); // 正向词列，通常较长
                     worksheet.Column(8).AdjustToContents(); // 核心词列
                     worksheet.Columns(1, 2).AdjustToContents(); // 序号、文件名
 
@@ -123,8 +123,6 @@ namespace ImageAnalyzerCore
             {
                 // 捕获 ClosedXML 写入失败的情况
                 Console.WriteLine($"[FATAL ERROR] 实际写入 Excel 文件失败。错误信息: {ex.Message}");
-                // 打印错误到日志 (假设有 loguru 机制)
-                // logger_obj.error(f"写入 Excel 失败: {ex.Message}") 
                 return false;
             }
         }
