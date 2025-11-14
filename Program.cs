@@ -19,7 +19,7 @@ namespace ImageAnalyzerCore
     class Program
     {
         // --- 1. 定义您的文件路径和配置 (改为静态字段) ---
-        // AnalyzerConfig 是静态类，无需实例化，直接通过类名访问成员。
+        // AnalyzerConfig 是静态类，无需实例化，直接通过类名访问成员。（假设 AnalyzerConfig 存在）
         private static readonly string FolderToScan = @"C:\stable-diffusion-webui\outputs\txt2img-images\历史";
         
         // Excel 报告的固定存储目录
@@ -41,45 +41,48 @@ namespace ImageAnalyzerCore
                 string excelPath = Path.Combine(ExcelDirectory, finalExcelFileName);
                 
                 DisplayMenu();
-                Write("请输入您的选择 (1-7): "); // 菜单项已增至 7
+                Write("请输入您的选择 (1-8): "); // 菜单项已增至 8
                 // Bug Fix: 使用 ?? string.Empty 确保 choice 永远是不可为 null 的 string
                 string choice = ReadLine()?.Trim() ?? string.Empty; 
 
                 try
                 {
+                    // @@    53-61,53-61   @@  流程顺序已调整：1-只读 -> 2/3/4-移动 -> 5/6-重命名 -> 7-完整流程 -> 8-退出
                     switch (choice)
-                    {
+                    {   
                         case "1":
-                            // 选项 1: 运行完整分析流程 (扫描 -> TF-IDF -> 报告 -> 评分)
-                            await RunFullAnalysisFlowAsync(excelPath); // 传递动态路径
-                            break;
-                        case "2":
-                            // 选项 2: (重构中) 跳过扫描和 TF-IDF，只生成报告和评分。
-                            WriteLine("[INFO] ⚠️ 选择 [2. 只生成 Excel 报告]，目前将执行完整流程 (扫描 -> TF-IDF -> 报告 -> 评分)。");
-                            WriteLine("[INFO] 未来重构时，此选项将只执行报告和评分步骤。");
-                            await RunFullAnalysisFlowAsync(excelPath); // 传递动态路径
-                            break;
-                        case "3":
-                            // 选项 3: (用户新定义) 仅运行扫描和报告生成 (Scan -> Report -> Open)
+                            // 选项 1: 仅运行扫描和报告生成 (Scan -> Report -> Open / 只读)
                             await RunScanAndReportFlowAsync(excelPath); // 传递动态路径
                             break;
+                        case "2":
+                            // 选项 2: 仅归档流程 (Scan -> Archive / 移动)
+                            await RunScoreArchiveFlowAsync();
+                            break;
+                        case "3":
+                            // 选项 3: 仅仅分类流程 (Scan -> Categorize / 移动)
+                            await RunCategorizeFlowAsync();
+                            break;
                         case "4":
-                            // 选项 4: 指定评分图片移动到外层 (Score Organizer)
+                            // 选项 4: 指定评分图片移动到外层 (Score Organizer / 移动)
                             await RunScoreOrganizerFlowAsync();
                             break;
                         case "5":
-                            // 选项 5: 仅运行归档流程 (Scan -> Archive)
-                            await RunScoreArchiveFlowAsync();
+                            // 选项 5: 仅自动添加 10 个 tag (Tagging Flow / 重命名)
+                            await RunTagFlowAsync();
                             break;
                         case "6":
-                            // 选项 6: 仅仅分类流程 (Scan -> Categorize)
-                            await RunCategorizeFlowAsync();
+                            // 选项 6: 仅自动添加评分 (Scoring and Tagging Flow / 重命名)
+                            await RunScoreTagFlowAsync();
                             break;
                         case "7":
+                            // 选项 7: 完整流程 (Full Flow)
+                            await RunFullAnalysisFlowAsync(excelPath); 
+                            break;
+                        case "8":
                             WriteLine("[INFO] 退出程序。");
                             return;
                         default:
-                            WriteLine("[WARNING] 无效的选项，请重新输入 1-7 之间的数字。"); // 提示更新
+                            WriteLine("[WARNING] 无效的选项，请重新输入 1-8 之间的数字。"); // 提示更新
                             break;
                     }
                     WriteLine("\n-----------------------------------\n");
@@ -97,18 +100,20 @@ namespace ImageAnalyzerCore
         /// </summary>
         private static void DisplayMenu()
         {
+            // 选项已按简单到复杂重新排序
             WriteLine("请选择您要执行的操作：");
-            WriteLine("  1. 完整流程 (扫描 -> 关键词提取 -> 报告生成 -> 评分预测)");
-            WriteLine("  2. 只生成 Excel 报告 (跳过扫描和关键词提取，但需要预先的数据缓存)");
-            WriteLine("  3. 仅扫描和报告生成 (只运行扫描，不进行关键词提取和评分，完成后自动打开报告)");
-            WriteLine("  4. 指定评分图片移动到外层 (Score Organizer)"); 
-            WriteLine("  5. 仅归档 (Scan -> Archive)"); // 新增选项 5
-            WriteLine("  6. 仅仅分类 (Scan -> Categorize)"); // 新增选项 6
-            WriteLine("  7. 退出程序"); // 退出选项改为 7
+            WriteLine("  1. 仅扫描生成表格（只读，Scan -> Report）");
+            WriteLine("  2. 仅归档到历史文件夹（移动，Scan -> Archive）"); 
+            WriteLine("  3. 仅分类历史文件夹（移动，Scan -> Categorize）"); 
+            WriteLine("  4. 仅移动历史评分到外层（移动，Score Organizer）"); 
+            WriteLine("  5. 仅自动添加 10 个 tag（重命名，Scan -> TF-IDF -> Tagging）");
+            WriteLine("  6. 仅自动添加评分（重命名，Scan -> TF-IDF -> Scoring -> Tagging）");
+            WriteLine("  7. 完整流程 (Scan -> TF-IDF -> Report -> Scoring)");
+            WriteLine("  8. 退出程序"); // 退出选项改为 8
         }
 
         /// <summary>
-        /// 完整分析流程：扫描 -> TF-IDF -> 报告 -> 评分 (选项 1)
+        /// 完整分析流程：扫描 -> TF-IDF -> 报告 -> 评分 (选项 7)
         /// </summary>
         private static async Task RunFullAnalysisFlowAsync(string excelPath)
         {
@@ -132,6 +137,7 @@ namespace ImageAnalyzerCore
             {
                 if (tfidfTagsMap.TryGetValue(info.FilePath, out var tags))
                 {
+                    // 假设 TfidfProcessor.FormatTfidfTagsForFilename 存在于 TfidfProcessor.cs 中
                     info.CoreKeywords = TfidfProcessor.FormatTfidfTagsForFilename(tags, "___");
                 }
             }
@@ -143,7 +149,7 @@ namespace ImageAnalyzerCore
         }
         
         /// <summary>
-        /// 仅运行扫描和报告生成流程 (选项 3)
+        /// 仅运行扫描和报告生成流程 (选项 1 - 只读)
         /// </summary>
         private static async Task RunScanAndReportFlowAsync(string excelPath)
         {
@@ -160,14 +166,15 @@ namespace ImageAnalyzerCore
         }
 
         /// <summary>
-        /// 指定评分图片移动到外层流程 (选项 4 - 评分整理)
+        /// 指定评分图片移动到外层流程 (选项 4 - 评分整理/移动)
         /// </summary>
         private static async Task RunScoreOrganizerFlowAsync()
         {
-            WriteLine("\n[INFO] >>> 4. 指定评分图片移动到外层 (Score Organizer) <<<");
+            WriteLine("\n[INFO] >>> 4. 指定评分图片移动到外层 (Score Organizer / 移动) <<<");
             // 假设 ScoreOrganizer 类已在 ImageAnalyzerCore 命名空间中定义
             var organizer = new ScoreOrganizer(); 
             
+            // 假设 ScoreOrganizer 包含这些静态配置
             WriteLine($"文件来源 (历史目录): {ScoreOrganizer.StaticSourceRootDir}");
             WriteLine($"目标目录 (评分XX父目录): {ScoreOrganizer.stringStaticTargetBaseDir}");
             
@@ -189,17 +196,20 @@ namespace ImageAnalyzerCore
         }
         
         /// <summary>
-        /// **[新增]** 仅归档流程 (选项 5: Scan -> Archive)
+        /// 仅归档流程 (选项 2: Scan -> Archive / 移动)
         /// </summary>
         private static async Task RunScoreArchiveFlowAsync()
         {
-            WriteLine("\n[INFO] >>> 5. 仅归档流程 (Scan -> Archive) <<<");
+            WriteLine("\n[INFO] >>> 2. 仅归档流程 (Scan -> Archive / 移动) <<<");
             
             // 1. 扫描图片并提取元数据，获取图片信息列表
             WriteLine("[INFO] 开始扫描图片并提取元数据...");
             var scanner = new ImageScanner();
             List<ImageInfo> imageData = scanner.ScanAndExtractInfo(FolderToScan);
             
+            // 【新增逻辑】统一跳过名为 ".bf" 的文件夹的文件 (此处进行过滤，确保归档不处理 .bf 文件)
+            imageData = FilterBfFolders(imageData);
+
             if (!imageData.Any())
             {
                 WriteLine("[INFO] 没有找到可处理的图片，归档流程中止。");
@@ -214,17 +224,20 @@ namespace ImageAnalyzerCore
         }
 
         /// <summary>
-        /// **[新增]** 仅仅分类流程 (选项 6: Scan -> Categorize)
+        /// 仅仅分类流程 (选项 3: Scan -> Categorize / 移动)
         /// </summary>
         private static async Task RunCategorizeFlowAsync()
         {
-            WriteLine("\n[INFO] >>> 6. 仅仅分类流程 (Scan -> Categorize) <<<");
+            WriteLine("\n[INFO] >>> 3. 仅仅分类流程 (Scan -> Categorize / 移动) <<<");
 
             // 1. 扫描图片并提取元数据，获取图片信息列表
             WriteLine("[INFO] 开始扫描图片并提取元数据...");
             var scanner = new ImageScanner();
             List<ImageInfo> imageData = scanner.ScanAndExtractInfo(FolderToScan);
             
+            // 【新增逻辑】统一跳过名为 ".bf" 的文件夹的文件 (此处进行过滤)
+            imageData = FilterBfFolders(imageData);
+
             if (!imageData.Any())
             {
                 WriteLine("[INFO] 没有找到可处理的图片，分类流程中止。");
@@ -237,6 +250,104 @@ namespace ImageAnalyzerCore
             // 分类目标目录就是扫描的根目录
             categorizer.CategorizeAndMoveImages(imageData, FolderToScan);
         }
+        
+        /// <summary>
+        /// 仅自动添加 10 个 tag 流程 (选项 5: Scan -> TF-IDF -> Tagging / 重命名)
+        /// </summary>
+        private static async Task RunTagFlowAsync()
+        {
+            WriteLine("\n[INFO] >>> 5. 仅自动添加 10 个 tag 流程 (重命名) <<<");
+
+            // 1. 扫描图片并提取元数据
+            WriteLine("[INFO] 开始扫描图片并提取元数据...");
+            var scanner = new ImageScanner();
+            List<ImageInfo> imageData = scanner.ScanAndExtractInfo(FolderToScan);
+            
+            // 【新增逻辑】统一跳过名为 ".bf" 的文件夹的文件
+            imageData = FilterBfFolders(imageData);
+
+            if (!imageData.Any())
+            {
+                WriteLine("[INFO] 没有找到可处理的图片，流程中止。");
+                return;
+            }
+            
+            // 2. TF-IDF/关键词提取阶段
+            WriteLine("\n[INFO] >>> 2. 开始 TF-IDF 关键词提取 <<<");
+            var tfidfProcessor = new TfidfProcessor();
+            Dictionary<string, List<string>> tfidfTagsMap = tfidfProcessor.ExtractTfidfTags(imageData);
+
+            // 3. 重命名/Tagging 阶段
+            WriteLine("\n[INFO] >>> 3. 开始执行文件名标记 (Tagging) 操作 <<<");
+            // 【TODO 修正】: FilenameTagger.cs 中需要定义一个接收三个参数（imageData, tfidfTagsMap, includeScore: false）的静态公共方法 TagFiles
+            FilenameTagger.TagFiles(imageData, tfidfTagsMap); 
+        }
+
+        /// <summary>
+        /// 仅自动添加评分流程 (选项 6: Scan -> TF-IDF -> Scoring -> Tagging / 重命名)
+        /// </summary>
+        private static async Task RunScoreTagFlowAsync()
+        {
+            WriteLine("\n[INFO] >>> 6. 仅自动添加评分流程 (重命名) <<<");
+            
+            // 1. 扫描图片并提取元数据
+            WriteLine("[INFO] 开始扫描图片并提取元数据...");
+            var scanner = new ImageScanner();
+            List<ImageInfo> imageData = scanner.ScanAndExtractInfo(FolderToScan);
+            
+            // 【新增逻辑】统一跳过名为 ".bf" 的文件夹的文件
+            imageData = FilterBfFolders(imageData);
+
+            if (!imageData.Any())
+            {
+                WriteLine("[INFO] 没有找到可处理的图片，流程中止。");
+                return;
+            }
+
+            // 2. TF-IDF/关键词提取阶段
+            WriteLine("\n[INFO] >>> 2. 开始 TF-IDF 关键词提取 <<<");
+            var tfidfProcessor = new TfidfProcessor();
+            Dictionary<string, List<string>> tfidfTagsMap = tfidfProcessor.ExtractTfidfTags(imageData);
+
+            // 3. 评分/预测阶段 (核心：将评分结果写回 ImageInfo 对象或直接进行操作)
+            WriteLine("\n[INFO] >>> 3. 开始评分预测 <<<");
+            var scorer = new ImageScorer(); // 假设 ImageScorer 存在且可实例化
+            // 【TODO 修正】: ImageScorer.cs 中需要定义一个接收 List<ImageInfo> 的公共方法 PredictAndApplyScores
+            scorer.PredictAndApplyScores(imageData); 
+
+            // 4. 重命名/Tagging 阶段 (这次会包含评分信息)
+            WriteLine("\n[INFO] >>> 4. 开始执行文件名标记 (Tagging) 操作，包含评分 <<<");
+            // 【TODO 修正】: FilenameTagger.cs 中需要定义一个接收三个参数（imageData, tfidfTagsMap, includeScore: true）的静态公共方法 TagFiles
+            FilenameTagger.TagFiles(imageData, tfidfTagsMap, includeScore: true); 
+        }
+
+        /// <summary>
+        /// 统一过滤掉路径中包含 ".bf" 文件夹的文件。
+        /// </summary>
+        /// <param name="imageData">原始图片信息列表。</param>
+        /// <returns>过滤后的图片信息列表。</returns>
+        // @@    400-403,400-403   @@ 
+        private static List<ImageInfo> FilterBfFolders(List<ImageInfo> imageData)
+        {
+            // 【修正】将 const 改为 string (局部变量)，因为 Path.DirectorySeparatorChar 不构成编译时常量
+            string bfSeparator = ".bf" + System.IO.Path.DirectorySeparatorChar; 
+            string bfFolder = System.IO.Path.DirectorySeparatorChar + ".bf";
+
+            int initialCount = imageData.Count;
+            List<ImageInfo> filteredData = imageData
+                .Where(info => !info.FilePath.Contains(bfSeparator) &&
+                               !info.FilePath.EndsWith(bfFolder, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+        // @@    405-408,405-408   @@
+
+            int skippedCount = initialCount - filteredData.Count;
+            if (skippedCount > 0)
+            {
+                WriteLine($"[WARNING] 已根据要求统一跳过 {skippedCount} 个位于或名为 '.bf' 文件夹的文件。");
+            }
+            return filteredData;
+        }
+
 
         /// <summary>
         /// 扫描图片并生成报告的公共部分。
@@ -249,6 +360,9 @@ namespace ImageAnalyzerCore
             var scanner = new ImageScanner();
             List<ImageInfo> imageData = scanner.ScanAndExtractInfo(FolderToScan);
 
+            // 【应用统一过滤】
+            imageData = FilterBfFolders(imageData);
+            
             if (!imageData.Any())
             {
                 WriteLine("[INFO] 没有找到可处理的图片，流程中止。");
@@ -259,6 +373,7 @@ namespace ImageAnalyzerCore
             // --- 2. 报告生成阶段 (对应 Python 的 create_excel_report) ---
             WriteLine("\n[INFO] >>> 2. 开始生成 Excel 报告 <<<");
             // 调用新的 ExcelReportGenerator 类进行报告创建 (包含计时和固定列宽逻辑)
+            // 假设 ExcelReportGenerator 存在且静态方法 CreateExcelReport 可用
             bool reportSuccess = ExcelReportGenerator.CreateExcelReport(imageData, excelPath); 
 
             if (!reportSuccess)
@@ -270,19 +385,6 @@ namespace ImageAnalyzerCore
             
             return imageData;
         }
-
-        #region [重构前代码 - 已迁移到 ExcelReportGenerator.cs]
-        // 此区域的代码已全部迁移到 ExcelReportGenerator.cs 文件中，并已被 Program.cs 引用。
-        /*
-            /// <summary>
-            /// **[关键修改]** 实际的 Excel 报告创建函数，使用 ClosedXML 写入数据。
-            /// </summary>
-            private static bool SimulateCreateExcelReport(List<ImageInfo> imageData, string path)
-            {
-                // ... (旧的 Excel 报告生成逻辑) ...
-            }
-        */
-        #endregion
         
         /// <summary>
         /// 执行报告生成后的通用操作：可选的评分/预测和报告打开。
@@ -294,7 +396,8 @@ namespace ImageAnalyzerCore
                 WriteLine("[INFO] 开始执行评分/预测...");
                 var scorer = new ImageScorer();
                 // 在实际项目中，这里需要将 Excel 文件路径传入，让评分器读取并写入结果
-                scorer.CalculateAndWriteScores(excelPath);
+                // 假设 ImageScorer 存在并具有 CalculateAndWriteScores 方法，对应 Python 中的 ImageScorer.process_excel_file
+                scorer.CalculateAndWriteScores(excelPath); 
             }
             
             // --- 最终报告打开逻辑 ---
