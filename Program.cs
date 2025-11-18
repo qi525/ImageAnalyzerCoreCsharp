@@ -77,7 +77,7 @@ namespace ImageAnalyzerCore
                 string excelPath = Path.Combine(ExcelDirectory, finalExcelFileName);
                 
                 DisplayMenu();
-                Write("请输入您的选择 (1-8): "); // 菜单项已增至 8
+                Write("请输入您的选择 (1-10): "); // 菜单项已增至 10
                 // Bug Fix: 使用 ?? string.Empty 确保 choice 永远是不可为 null 的 string
                 string choice = ReadLine()?.Trim() ?? string.Empty; 
 
@@ -115,10 +115,18 @@ namespace ImageAnalyzerCore
                             await RunFullAnalysisFlowAsync(excelPath); 
                             break;
                         case "8":
+                            // 选项 8: 提取风格词 (Extract Style Words)
+                            await RunExtractStyleWordsFlowAsync();
+                            break;
+                        case "9":
+                            // 选项 9: 提取纯核心词 (Extract Core Words Only)
+                            await RunExtractCoreWordsFlowAsync();
+                            break;
+                        case "10":
                             WriteLine("[INFO] 退出程序。");
                             return;
                         default:
-                            WriteLine("[WARNING] 无效的选项，请重新输入 1-8 之间的数字。"); // 提示更新
+                            WriteLine("[WARNING] 无效的选项，请重新输入 1-10 之间的数字。"); // 提示更新
                             break;
                     }
                     WriteLine("\n-----------------------------------\n");
@@ -145,7 +153,9 @@ namespace ImageAnalyzerCore
             WriteLine("  5. 仅自动添加 10 个 tag（重命名，Scan -> TF-IDF -> Tagging）");
             WriteLine("  6. 仅自动添加评分（重命名，Scan -> TF-IDF -> Scoring -> Tagging）");
             WriteLine("  7. 完整流程 (Scan -> TF-IDF -> Report -> Scoring)");
-            WriteLine("  8. 退出程序"); // 退出选项改为 8
+            WriteLine("  8. 提取风格词（功能8，Scan -> Extract Style Words）");
+            WriteLine("  9. 提取纯核心词（功能9，Scan -> Extract Style Words -> Extract Core Words）");
+            WriteLine("  10. 退出程序"); // 退出选项改为 10
         }
 
         /// <summary>
@@ -351,6 +361,164 @@ namespace ImageAnalyzerCore
             WriteLine("\n[INFO] >>> 4. 开始执行文件名标记 (Tagging) 操作，包含评分 <<<");
             // 【TODO 修正】: FilenameTagger.cs 中需要定义一个接收三个参数（imageData, tfidfTagsMap, includeScore: true）的静态公共方法 TagFiles
             FilenameTagger.TagFiles(imageData, tfidfTagsMap, includeScore: true); 
+        }
+
+        /// <summary>
+        /// 【功能8】仅提取风格词流程 (选项 8: Scan -> Extract Style Words)
+        /// 利用选项1的扫描基础功能，提取文件名中的风格词。
+        /// </summary>
+        private static async Task RunExtractStyleWordsFlowAsync()
+        {
+            WriteLine("\n[INFO] >>> 8. 提取风格词 (Extract Style Words) <<<");
+
+            // 1. 扫描图片并提取元数据 (复用选项1的扫描基础)
+            WriteLine("[INFO] 开始扫描图片并提取元数据...");
+            var scanner = new ImageScanner();
+            const string FallbackFolderToScan = @"C:\stable-diffusion-webui\outputs\txt2img-images\历史";
+            List<ImageInfo> imageData = scanner.ScanAndExtractInfo(FallbackFolderToScan);
+
+            if (!imageData.Any())
+            {
+                WriteLine("[INFO] 没有找到可处理的图片，流程中止。");
+                return;
+            }
+
+            // 2. 提取风格词 (利用选项1的元数据提取结果)
+            WriteLine("\n[INFO] 开始提取风格词...");
+            Dictionary<string, int> styleWords = ImageScanner.ExtractStyleWords(imageData, occurrenceThreshold: 10, minStyleWordLength: 30);
+
+            // 3. 打印详细结果
+            if (styleWords.Count > 0)
+            {
+                WriteLine($"\n✓ 成功提取 {styleWords.Count} 个高频风格词");
+                WriteLine("\n--- 高频风格词详细列表 ---");
+                int index = 1;
+                foreach (var kv in styleWords)
+                {
+                    WriteLine($"{index}. 频率: {kv.Value:D2} 次 | 内容: {kv.Key}");
+                    index++;
+                }
+
+                // 4. 导出到Excel
+                WriteLine("\n[INFO] 开始导出风格词到Excel...");
+                string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+                string excelPath = Path.Combine(ExcelDirectory, $"风格词统计_{timestamp}.xlsx");
+                
+                bool exportSuccess = ImageScanner.ExportStyleWordsToExcel(styleWords, excelPath);
+                
+                if (exportSuccess)
+                {
+                    WriteLine($"[SUCCESS] Excel文件已保存至: {excelPath}");
+                    // 自动打开Excel文件
+                    try
+                    {
+                        Process.Start(new ProcessStartInfo(excelPath) { UseShellExecute = true });
+                    }
+                    catch (Exception ex)
+                    {
+                        WriteLine($"[WARNING] 无法自动打开Excel文件。请手动打开: {excelPath} | 错误: {ex.Message}");
+                    }
+                }
+            }
+            else
+            {
+                WriteLine("\n[INFO] 未检测到达到阈值的高频风格词。");
+            }
+        }
+
+        /// <summary>
+        /// 【功能9】提取纯核心词流程 (选项 9: Scan -> Extract Style Words -> Extract Core Words)
+        /// 利用选项1的扫描基础功能和功能8的风格词提取，清除文件名中的风格词后提取纯核心关键词。
+        /// </summary>
+        private static async Task RunExtractCoreWordsFlowAsync()
+        {
+            WriteLine("\n[INFO] >>> 9. 提取纯核心词 (Extract Core Words Only) <<<");
+
+            // 1. 扫描图片并提取元数据 (复用选项1的扫描基础)
+            WriteLine("[INFO] 开始扫描图片并提取元数据...");
+            var scanner = new ImageScanner();
+            const string FallbackFolderToScan = @"C:\stable-diffusion-webui\outputs\txt2img-images\历史";
+            List<ImageInfo> imageData = scanner.ScanAndExtractInfo(FallbackFolderToScan);
+
+            if (!imageData.Any())
+            {
+                WriteLine("[INFO] 没有找到可处理的图片，流程中止。");
+                return;
+            }
+
+            // 2. 提取风格词 (功能8的步骤)
+            WriteLine("\n[INFO] 开始提取风格词...");
+            Dictionary<string, int> styleWords = ImageScanner.ExtractStyleWords(imageData, occurrenceThreshold: 10, minStyleWordLength: 30);
+
+            // 3. 使用风格词清除，提取纯核心词
+            WriteLine("\n[INFO] 开始提取纯核心词（移除风格词）...");
+            int processedCount = 0;
+            int coreWordsCount = 0;
+
+            foreach (var info in imageData)
+            {
+                if (!string.IsNullOrWhiteSpace(info.CleanedTags))
+                {
+                    // 使用功能9的核心方法：利用风格词清除标签，提取纯核心词
+                    string coreWordsOnly = ImageScanner.ExtractCoreWordsOnly(info.CleanedTags, styleWords);
+                    
+                    if (!string.IsNullOrWhiteSpace(coreWordsOnly))
+                    {
+                        // 更新 ImageInfo 中的 CoreKeywords 为纯核心词
+                        info.CoreKeywords = coreWordsOnly;
+                        coreWordsCount++;
+                    }
+
+                    processedCount++;
+                    
+                    // 进度输出
+                    if (processedCount % 10 == 0 || processedCount == imageData.Count)
+                    {
+                        WriteLine($"\r[Progress] 已处理 {processedCount}/{imageData.Count} 个图片，提取核心词: {coreWordsCount}");
+                    }
+                }
+            }
+
+            // 4. 输出统计信息
+            WriteLine($"\n\n--- 纯核心词提取统计 ---");
+            WriteLine($"总扫描数: {imageData.Count}");
+            WriteLine($"成功提取纯核心词: {coreWordsCount}");
+            WriteLine($"无法提取纯核心词: {imageData.Count - coreWordsCount}");
+
+            // 5. 打印样本结果
+            WriteLine($"\n--- 样本结果（前 10 个图片的纯核心词） ---");
+            int sampleCount = 0;
+            foreach (var info in imageData.Take(10))
+            {
+                sampleCount++;
+                WriteLine($"\n{sampleCount}. 文件: {info.FileName}");
+                WriteLine($"   原始标签: {(string.IsNullOrWhiteSpace(info.CleanedTags) ? "(无)" : info.CleanedTags.Length > 80 ? info.CleanedTags.Substring(0, 80) + "..." : info.CleanedTags)}");
+                WriteLine($"   纯核心词: {(string.IsNullOrWhiteSpace(info.CoreKeywords) ? "(无)" : info.CoreKeywords)}");
+            }
+
+            // 6. 导出提取的风格词到Excel
+            if (styleWords.Count > 0)
+            {
+                WriteLine("\n[INFO] 开始导出提取的风格词到Excel...");
+                string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+                string excelPath = Path.Combine(ExcelDirectory, $"风格词统计_功能9_{timestamp}.xlsx");
+                
+                bool exportSuccess = ImageScanner.ExportStyleWordsToExcel(styleWords, excelPath);
+                
+                if (exportSuccess)
+                {
+                    WriteLine($"[SUCCESS] 风格词Excel文件已保存至: {excelPath}");
+                    // 自动打开Excel文件
+                    try
+                    {
+                        Process.Start(new ProcessStartInfo(excelPath) { UseShellExecute = true });
+                    }
+                    catch (Exception ex)
+                    {
+                        WriteLine($"[WARNING] 无法自动打开Excel文件。请手动打开: {excelPath} | 错误: {ex.Message}");
+                    }
+                }
+            }
         }
 
         /// <summary>
