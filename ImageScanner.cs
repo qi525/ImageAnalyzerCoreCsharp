@@ -22,6 +22,9 @@ using MetadataExtractor.Formats.Iptc;
 // [Excel导出支持] 引入 ClosedXML 库
 using ClosedXML.Excel;
 
+// [进度条支持] 引入 Spectre.Console 库
+using Spectre.Console;
+
 /// 获取图片文件所有注释信息：的PNGINFO，exif
 /// 从注释信息提取各种信息
 /// 从注释信息提取正向关键词，负面关键词，其他设置，模型，等等
@@ -109,64 +112,37 @@ namespace ImageAnalyzerCore
             var imageData = new ConcurrentBag<ImageInfo>();
             
             // ⚠️ 需要 AnalyzerConfig.MaxConcurrentWorkers 存在于某个可访问的类中
-            WriteLine($"\n[INFO] 检测到 {totalImages} 个图片文件。使用 {AnalyzerConfig.MaxConcurrentWorkers} 个线程并行扫描元数据...");
+            WriteLine($"\n[INFO] 检测到 {totalImages} 个图片文件。使用 {AnalyzerConfig.MaxConcurrentWorkers} 个线程并行扫描元数据...\n");
 
-            // [多线程实现] 使用 Parallel.ForEach 进行并行处理
-            Parallel.ForEach(imagePaths, new ParallelOptions { MaxDegreeOfParallelism = AnalyzerConfig.MaxConcurrentWorkers }, filePath =>
+            // 使用 Spectre.Console Progress API
+            ProgressBarHelper.RunScanProgress(ctx =>
             {
-                var result = ProcessSingleImage(filePath);
-                imageData.Add(result);
+                var task = ctx.AddTask("[cyan]扫描图片元数据[/]", maxValue: totalImages);
 
-                // [进度条逻辑] 安全地递增计数器并更新进度条
-                int current = Interlocked.Increment(ref _processedCount);
-                
-                // 每处理10个更新一次，或者处理完最后一个更新，或者处理量小于10时，每处理1个更新一次。
-                if (current % 10 == 0 || current == totalImages || totalImages <= 10) 
+                // [多线程实现] 使用 Parallel.ForEach 进行并行处理
+                Parallel.ForEach(imagePaths, new ParallelOptions { MaxDegreeOfParallelism = AnalyzerConfig.MaxConcurrentWorkers }, filePath =>
                 {
-                    // --- 实时计算指标 ---
-                    TimeSpan elapsed = stopwatch.Elapsed;
-                    double percentage = (double)current / totalImages * 100;
-                    
-                    // 速度 (items/second)
-                    // 确保 elapsed.TotalSeconds 不为 0 以防除零
-                    double speed = elapsed.TotalSeconds > 0 ? current / elapsed.TotalSeconds : 0.0; 
-                    
-                    // 剩余时间估算 (ETA)
-                    TimeSpan eta = TimeSpan.Zero;
-                    if (speed > 0)
-                    {
-                        eta = TimeSpan.FromSeconds((totalImages - current) / speed);
-                    }
-                    
-                    // 在并发环境中安全读取计数
-                    int successCount = _statusCounts.GetValueOrDefault("成功提取", 0);
-                    int failureCount = _statusCounts.Where(kv => kv.Key.StartsWith("失败")).Sum(kv => kv.Value);
-                    
-                    // 使用 \r 回到行首，实现覆盖更新，模拟进度条
-                    // 格式：[Progress] X/Y (Z%) | Speed files/s | 耗时: HH:mm:ss | 预计剩余: HH:mm:ss | 成功: A | 失败: B
-                    Write($"\r[Progress] {current}/{totalImages} ({percentage:F1}%) | {speed:F2} files/s | 耗时: {elapsed:hh\\:mm\\:ss} | 预计剩余: {eta:hh\\:mm\\:ss} | 成功: {successCount} | 失败: {failureCount}");
-                }
+                    var result = ProcessSingleImage(filePath);
+                    imageData.Add(result);
+
+                    // [进度条逻辑] 安全地递增计数器并更新进度条
+                    int current = Interlocked.Increment(ref _processedCount);
+                    task.Value = current;
+                });
+
+                task.StopTask();
             });
-            
-            // 确保处理完成后，进度条显示 100% 并换行
-            if (totalImages > 0)
-            {
-                stopwatch.Stop(); // 停止计时
-                TimeSpan finalElapsed = stopwatch.Elapsed;
-                // 最终状态行，确保打印完整的进度和总耗时
-                WriteLine($"\r[Progress] 扫描完成！ {totalImages}/{totalImages} (100.0%) | 总耗时: {finalElapsed:hh\\:mm\\:ss} | 成功: {_statusCounts.GetValueOrDefault("成功提取", 0)} | 失败: {_statusCounts.Where(kv => kv.Key.StartsWith("失败")).Sum(kv => kv.Value)}");
-            }
 
             var finalResults = imageData.ToList();
             
-            int successCount = _statusCounts.GetValueOrDefault("成功提取", 0);
-            int failureCount = _statusCounts.Where(kv => kv.Key.StartsWith("失败")).Sum(kv => kv.Value);
+            int finalSuccessCount = _statusCounts.GetValueOrDefault("成功提取", 0);
+            int finalFailureCount = _statusCounts.Where(kv => kv.Key.StartsWith("失败")).Sum(kv => kv.Value);
             
-            WriteLine("--- 图片扫描与元数据提取统计 ---");
+            WriteLine("\n--- 图片扫描与元数据提取统计 ---");
             WriteLine($"总任务量: {totalImages}");
-            WriteLine($"成功处理量: {successCount}");
-            WriteLine($"失败处理量: {failureCount}");
-            if (failureCount > 0)
+            WriteLine($"成功处理量: {finalSuccessCount}");
+            WriteLine($"失败处理量: {finalFailureCount}");
+            if (finalFailureCount > 0)
             {
                 WriteLine("[ALERT] 异常警报：元数据提取失败，请检查文件权限或文件损坏情况。");
                 WriteLine("失败详情:");

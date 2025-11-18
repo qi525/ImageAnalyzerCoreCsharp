@@ -33,8 +33,9 @@ namespace ImageAnalyzerCore
             { "文件路径", FixedColumnWidth }, 
             { "创建时间", FixedColumnWidth }, 
             { "修改时间", FixedColumnWidth }, 
-            { "正向词", FixedColumnWidth }, // <-- 列名已修改
-            { "提取正向词的核心词", FixedColumnWidth }, 
+            { "正向词", FixedColumnWidth }, // 原始正向词
+            { "正向词核心词提取", FixedColumnWidth }, // 【新增】功能9 要新增的列
+            { "提取正向词的核心词", FixedColumnWidth }, // 保留旧列（兼容）
             { "文件状态", FixedColumnWidth }
         };
 
@@ -94,8 +95,9 @@ namespace ImageAnalyzerCore
                         worksheet.Cell(row, 5).Value = info.CreationTime.ToString("yyyy-MM-dd HH:mm:ss");
                         worksheet.Cell(row, 6).Value = info.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss");
                         worksheet.Cell(row, 7).Value = info.ExtractedTagsRaw; // 正向词
-                        worksheet.Cell(row, 8).Value = info.CoreKeywords; // 提取正向词的核心词
-                        worksheet.Cell(row, 9).Value = info.Status; // 文件状态
+                        worksheet.Cell(row, 8).Value = info.CoreKeywords; // 【新增列】正向词核心词提取（功能9）
+                        worksheet.Cell(row, 9).Value = info.CoreKeywords; // 提取正向词的核心词（保留兼容列）
+                        worksheet.Cell(row, 10).Value = info.Status; // 文件状态
                     }
 
                     // 4. 格式化：调整列以适应内容长度 (已注释，以减少资源消耗)

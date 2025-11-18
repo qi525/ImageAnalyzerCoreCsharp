@@ -102,16 +102,16 @@ namespace ImageAnalyzerCore
         {
             try
             {
-                var baseDir = AppDomain.CurrentDomain.BaseDirectory;
+                var baseDir = AppDomain.CurrentDomain.BaseDirectory ?? ".";
                 var resourcePath = Path.Combine(baseDir, "Resources", "POSITIVE_PROMPT_STOP_WORDS.txt");
-                List<string> lines = null;
+                List<string>? lines = null;
 
                 if (File.Exists(resourcePath))
                 {
                     // 读取文件，保留非空且非注释行（以 '#' 开头视为注释）
                     var fileLines = File.ReadAllLines(resourcePath);
                     lines = fileLines
-                        .Select(l => l?.Trim())
+                        .Select(l => l?.Trim() ?? string.Empty)
                         .Where(l => !string.IsNullOrEmpty(l) && !l.StartsWith("#"))
                         .ToList();
                 }
