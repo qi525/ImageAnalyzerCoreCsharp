@@ -66,36 +66,15 @@ namespace ImageAnalyzerCore
         /// 正向提示词的停用词列表 (用于提取核心词)。
         /// 对应 Python 源码中的 POSITIVE_PROMPT_STOP_WORDS。
         /// 这些是常见的风格词和质量标签，用于清洗提示词。
-        /// 优先从 `Resources/POSITIVE_PROMPT_STOP_WORDS.txt` 加载，文件不存在时回退到内嵌默认列表。
+        /// 优先从 `Resources/STYLE_WORDS_FALLBACK.txt` 加载，文件不存在时回退到内嵌默认列表。
         /// </summary>
         public static readonly ReadOnlyCollection<string> PositivePromptStopWords;
 
         // 内嵌的回退列表（仅在资源文件缺失时使用）
         private static readonly List<string> _positivePromptStopWordsFallback = new List<string>
         {
-            "newest, 2025, toosaka_asagi, novel_illustration, torino_aqua, izumi_tsubasu, oyuwari, pottsness, yunsang, hito_komoru, akeyama_kitsune, fi-san, rourou_(been), gweda, fuzichoco, shanguier, anmi, missile228, atdan, iizuki_tasuku, piromizu, binggong_asylum, sheya, dishwasher1910, omone_hokoma_agm, puuzaki_puuna, m-da_s-tarou, cutesexyrobutts, houkisei, sora_72-iro, machi_(machi0910), mochirong, ",
-            "newest, 2025, toosaka_asagi, novel_illustration, torino_aqua, izumi_tsubasu, oyuwari, pottsness, yunsang, hito_komoru, akeyama_kitsune, fi-san, rourou_(been), gweda, fuzichoco, shanguier, anmi, missile228, atdan, iizuki_tasuku, piromizu, binggong_asylum, sheya, dishwasher1910, omone_hokoma_agm, puuzaki_puuna, m-da_s-tarou, cutesexyrobutts, ",
-            "newest, 2025, toosaka_asagi, novel_illustration, torino_aqua, izumi_tsubasu, oyuwari, pottsness, yunsang, hito_komoru, akeyama_kitsune, fi-san, rourou_(been), gweda, fuzichoco, shanguier, anmi, missile228, atdan, iizuki_tasuku, piromizu, binggong_asylum, sheya, dishwasher1910, omone_hokoma_agm, puuzaki_puuna, m-da_s-tarou, ",
-            // 艺术家和风格词组（来自 image_scanner.py）
-            "newest, 2025, toosaka_asagi, novel_illustration, torino_aqua, izumi_tsubasu, oyuwari, pottsness, yunsang, hito_komoru, akeyama_kitsune, fi-san, rourou_(been), gweda, fuzichoco, shanguier, anmi, missile228, atdan, ",
-            "newest, 2025, toosaka_asagi, novel_illustration, torino_aqua, izumi_tsubasu, oyuwari, pottsness, yunsang, hito_komoru, akeyama_kitsune, fi-san, rourou_(been), gweda, fuzichoco, shanguier, anmi, missile228, ",
-            "newest,2025,toosaka_asagi,novel_illustration,torino_aqua,izumi_tsubasu,oyuwari,pottsness,yunsang,hito_komoru,akeyama_kitsune,fi-san,rourou_(been),gweda,fuzichoco,shanguier,anmi,missile228,",
-            "newest,2026,toosaka_asagi,novel_illustration,torino_aqua,izumi_tsubasu,oyuwari,pottsness,yunsang,hito_komoru,akeyama_kitsune,fi-san,rourou_(been),gweda,fuzichoco,shanguier,anmi, ",
-            "newest, yunsang, hito_komoru, akeyama_kitsune, fi-san, rourou_(been), gweda, fuzichoco, shanguier, anmi, ",
-            "2025, toosaka_asagi, novel_illustration, torino_aqua, izumi_tsubasu, oyuwari, pottsness, ",
-            
-            // 质量标签和修饰词
-            "masterpiece, best quality, amazing quality, very awa, absurdres, newest, very aesthetic, depth of field, ",
-            "very awa, absurdres, newest, very aesthetic, depth of field, ",
-            "dynamic angle, dutch_angle, tinker bell (pixiv 10956015), masterpiece, best quality, amazing quality, very awa, absurdres, newest, very aesthetic, depth of field, ",
-            
-            // 简短的风格词组
-            "sexy and cute, ",
-            "dynamic pose, sexy pose, ",
-            
-            // 视觉效果词
-            "see-through, see-through_clothes, transparent, front_light, frontlight, flat_lighting, soft_light, ",
-            "see-through, transparent, ",
+            // 此列表已迁移至 Resources/STYLE_WORDS_FALLBACK.txt
+            // 保留空列表以防万一
         };
 
         static AnalyzerConfig()
@@ -103,7 +82,7 @@ namespace ImageAnalyzerCore
             try
             {
                 var baseDir = AppDomain.CurrentDomain.BaseDirectory ?? ".";
-                var resourcePath = Path.Combine(baseDir, "Resources", "POSITIVE_PROMPT_STOP_WORDS.txt");
+                var resourcePath = Path.Combine(baseDir, "Resources", "STYLE_WORDS_FALLBACK.txt");
                 List<string>? lines = null;
 
                 if (File.Exists(resourcePath))

@@ -163,6 +163,121 @@ namespace ImageAnalyzerCore
                 WriteLine($"[SUCCESS] 风格词Excel已保存: {excelPath}");
                 OpenFile(excelPath);
             }
+
+            // ========== 二次清洗步骤（可选） ==========
+            WriteLine("\n[INFO] 是否执行二次清洗？(y/n) [默认: n]");
+            string cleanChoice = ReadLine()?.Trim().ToLower() ?? "n";
+            
+            if (cleanChoice == "y")
+            {
+                WriteLine("\n[INFO] 执行二次清洗：移除无用词汇...");
+                
+                // 从外部txt文件读取无用词汇清单
+                var uselessSuffixes = LoadUselessSuffixes();
+
+                if (uselessSuffixes.Count == 0)
+                {
+                    WriteLine("[WARNING] 无法加载无用词汇清单，跳过二次清洗。");
+                    return;
+                }
+
+                WriteLine($"[INFO] 已加载 {uselessSuffixes.Count} 个无用词汇后缀。");
+
+                // 对风格词进行清洗
+                var cleanedStyleWords = new Dictionary<string, int>();
+                foreach (var kv in styleWords)
+                {
+                    string cleanedWord = kv.Key;
+                    
+                    // 逐一尝试移除无用后缀
+                    foreach (var suffix in uselessSuffixes)
+                    {
+                        if (cleanedWord.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+                        {
+                            cleanedWord = cleanedWord.Substring(0, cleanedWord.Length - suffix.Length).Trim();
+                            cleanedWord = cleanedWord.TrimEnd(',', ' ');
+                            break;
+                        }
+                    }
+
+                    // 只记录清洗后长度足够的词
+                    if (!string.IsNullOrWhiteSpace(cleanedWord) && cleanedWord.Length >= 30)
+                    {
+                        cleanedWord = cleanedWord.ToLower();
+                        
+                        if (cleanedStyleWords.ContainsKey(cleanedWord))
+                        {
+                            cleanedStyleWords[cleanedWord] += kv.Value;
+                        }
+                        else
+                        {
+                            cleanedStyleWords[cleanedWord] = kv.Value;
+                        }
+                    }
+                }
+
+                if (cleanedStyleWords.Count == 0)
+                {
+                    WriteLine("[INFO] 清洗后未检测到高频风格词。");
+                    return;
+                }
+
+                // 按频率排序后输出
+                var sortedCleanedWords = cleanedStyleWords
+                    .OrderByDescending(kv => kv.Value)
+                    .ToDictionary(kv => kv.Key, kv => kv.Value);
+
+                WriteLine($"\n✓ 清洗后提取 {sortedCleanedWords.Count} 个高频风格词");
+                int cleanIndex = 1;
+                foreach (var kv in sortedCleanedWords)
+                {
+                    WriteLine($"{cleanIndex}. 频率: {kv.Value:D2} 次 | 内容: {kv.Key}");
+                    cleanIndex++;
+                }
+
+                // 保存清洗版Excel
+                string cleanedTimestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+                string cleanedExcelPath = Path.Combine(ExcelDirectory, $"风格词统计_清洗版_{cleanedTimestamp}.xlsx");
+                
+                if (ImageScanner.ExportStyleWordsToExcel(sortedCleanedWords, cleanedExcelPath))
+                {
+                    WriteLine($"[SUCCESS] 清洗版风格词Excel已保存: {cleanedExcelPath}");
+                    OpenFile(cleanedExcelPath);
+                }
+            }
+        }
+
+        /// <summary>
+        /// 加载无用词汇后缀清单（从外部txt文件）。
+        /// </summary>
+        private static List<string> LoadUselessSuffixes()
+        {
+            var suffixes = new List<string>();
+            try
+            {
+                var baseDir = AppDomain.CurrentDomain.BaseDirectory ?? ".";
+                var resourcePath = Path.Combine(baseDir, "Resources", "USELESS_STYLE_WORD_SUFFIXES.txt");
+
+                if (File.Exists(resourcePath))
+                {
+                    var lines = File.ReadAllLines(resourcePath);
+                    suffixes = lines
+                        .Where(line => !string.IsNullOrWhiteSpace(line) && !line.StartsWith("#"))
+                        .ToList();
+                    
+                    WriteLine($"[INFO] 已从 {resourcePath} 加载无用词汇清单。");
+                }
+                else
+                {
+                    WriteLine($"[WARNING] 无用词汇清单文件不存在: {resourcePath}");
+                }
+            }
+            catch (Exception ex)
+            {
+                WriteLine($"[ERROR] 加载无用词汇清单失败: {ex.Message}");
+            }
+
+            return suffixes;
         }
 
         /// <summary>
