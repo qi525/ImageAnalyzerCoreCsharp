@@ -11,40 +11,37 @@ namespace ImageAnalyzerCore
     public static class ProgressBarHelper
     {
         /// <summary>
-        /// 运行扫描进度显示（带详细列信息）
+        /// 标准进度条列配置：任务描述、进度条、百分比、剩余时间、耗时、旋转指示器
         /// </summary>
-        public static void RunScanProgress(Action<ProgressContext> scanAction)
+        private static readonly ProgressColumn[] StandardColumns = new ProgressColumn[]
+        {
+            new TaskDescriptionColumn(),    // 任务描述
+            new ProgressBarColumn(),        // 进度条
+            new PercentageColumn(),         // 百分比 [100%]
+            new RemainingTimeColumn(),      // 剩余时间 [ETA]
+            new ElapsedTimeColumn(),        // 已耗时 [Elapsed]
+            new SpinnerColumn(),            // 旋转指示器
+        };
+
+        /// <summary>
+        /// 运行通用进度显示（扫描、核心词提取等）
+        /// </summary>
+        public static void RunProgress(Action<ProgressContext> action)
         {
             AnsiConsole.Progress()
-                .Columns(new ProgressColumn[]
-                {
-                    new TaskDescriptionColumn(),              // 任务描述
-                    new ProgressBarColumn(),                  // 进度条
-                    new PercentageColumn(),                   // 百分比 [100%]
-                    new RemainingTimeColumn(),                // 剩余时间 [ETA]
-                    new ElapsedTimeColumn(),                  // 已耗时 [Elapsed]
-                    new SpinnerColumn(),                      // 旋转指示器
-                })
-                .Start(scanAction);
+                .Columns(StandardColumns)
+                .Start(action);
         }
+
+        /// <summary>
+        /// 运行扫描进度显示（带详细列信息）
+        /// </summary>
+        public static void RunScanProgress(Action<ProgressContext> scanAction) => RunProgress(scanAction);
 
         /// <summary>
         /// 运行核心词提取进度显示（带详细列信息）
         /// </summary>
-        public static void RunCoreWordsProgress(Action<ProgressContext> coreAction)
-        {
-            AnsiConsole.Progress()
-                .Columns(new ProgressColumn[]
-                {
-                    new TaskDescriptionColumn(),              // 任务描述
-                    new ProgressBarColumn(),                  // 进度条
-                    new PercentageColumn(),                   // 百分比 [100%]
-                    new RemainingTimeColumn(),                // 剩余时间 [ETA]
-                    new ElapsedTimeColumn(),                  // 已耗时 [Elapsed]
-                    new SpinnerColumn(),                      // 旋转指示器
-                })
-                .Start(coreAction);
-        }
+        public static void RunCoreWordsProgress(Action<ProgressContext> coreAction) => RunProgress(coreAction);
 
         /// <summary>
         /// 生成详细的进度信息行（用于自定义显示）

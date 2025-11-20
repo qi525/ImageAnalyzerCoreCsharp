@@ -19,9 +19,13 @@ namespace ImageAnalyzerCore
     /// </summary>
     public static class FilenameTagger
     {
-        // 使用 ConcurrentDictionary 确保在 Parallel.ForEach 中的多线程安全性
+        // 重复的正则模式提取为常量
+        private static readonly Regex ScorePattern = new Regex(@"\s*\(\d{1,3}\.\d分\)");
+        private static readonly Regex TagPattern = new Regex(@"(_+[\w]+)*$");
+        private static readonly Regex InvalidCharsPattern = new Regex(@"[^\w\-\.\s\(\)_]");
+
         private static readonly ConcurrentDictionary<string, int> ConflictCounters = new ConcurrentDictionary<string, int>();
-        private static readonly ConcurrentDictionary<string, int> _statusCounts = new ConcurrentDictionary<string, int>(); // 用于统计重命名状态
+        private static readonly ConcurrentDictionary<string, int> _statusCounts = new ConcurrentDictionary<string, int>();
 
         /// <summary>
         /// [批量功能] 根据TF-IDF结果批量重命名文件。
@@ -147,13 +151,9 @@ namespace ImageAnalyzerCore
         /// </summary>
         private static string RemoveExistingTagsAndScores(string baseName)
         {
-            // 匹配并移除 "(X.X分)" 格式的评分
-            string cleaned = Regex.Replace(baseName, @"\s*\(\d{1,3}\.\d分\)", "", RegexOptions.IgnoreCase);
-            
-            // 匹配并移除末尾的 "_tagA___tagB" 格式的标签
-            // 移除末尾可能的 _[标签组] 部分
-            cleaned = Regex.Replace(cleaned, @"(_+[\w]+)*$", "", RegexOptions.IgnoreCase).TrimEnd('_');
-
+            // 使用提取的 Regex 模式
+            string cleaned = ScorePattern.Replace(baseName, "");
+            cleaned = TagPattern.Replace(cleaned, "").TrimEnd('_');
             return cleaned;
         }
 
@@ -164,14 +164,11 @@ namespace ImageAnalyzerCore
         /// </summary>
         private static string EnsureUniqueFilename(string newFileNameWithoutExt, string ext, string directoryName)
         {
-             // 清理文件名中不允许的字符
-            string cleanedBaseName = Regex.Replace(newFileNameWithoutExt, @"[^\w\-\.\s\(\)_]", "", RegexOptions.None).Trim('_');
-
+            string cleanedBaseName = InvalidCharsPattern.Replace(newFileNameWithoutExt, "").Trim('_');
             string fullPath = Path.Combine(directoryName, cleanedBaseName + ext);
+            
             if (!File.Exists(fullPath))
-            {
                 return cleanedBaseName + ext;
-            }
 
             int counter = 1;
             string uniquePath;
@@ -180,7 +177,7 @@ namespace ImageAnalyzerCore
                 string tentativeName = $"{cleanedBaseName} ({counter})";
                 uniquePath = Path.Combine(directoryName, tentativeName + ext);
                 counter++;
-            } while (File.Exists(uniquePath) && counter < 1000); 
+            } while (File.Exists(uniquePath) && counter < 1000);
 
             return Path.GetFileName(uniquePath);
         }
