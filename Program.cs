@@ -9,14 +9,14 @@ namespace ImageAnalyzerCore
     {
         private static readonly Dictionary<string, (string Description, Action Action)> MenuItems = new()
         {
-            { "1", ("仅扫描生成表格（只读）", WorkflowManager.Feature1_ScanAndReport) },
-            { "2", ("仅归档到历史文件夹（移动）", WorkflowManager.Feature2_Archive) },
+            { "1", ("仅扫描生成表格（只读）【未！！！完成】", WorkflowManager.Feature1_ScanAndReport) },
+            { "2", ("仅归档到历史文件夹（移动）【已完成】【单文件版】", WorkflowManager.Feature2_Archive) },
             { "3", ("仅分类历史文件夹（移动）", WorkflowManager.Feature3_Categorize) },
-            { "4", ("仅移动历史评分到外层（移动）", WorkflowManager.Feature4_ScoreOrganizer) },
+            { "4", ("仅移动历史评分到外层（移动）【已完成】", WorkflowManager.Feature4_ScoreOrganizer) },
             { "5", ("仅自动添加 10 个 tag（重命名）", WorkflowManager.Feature5_AutoTag) },
             { "6", ("仅自动添加评分（重命名）", WorkflowManager.Feature6_AutoScoreAndTag) },
             { "7", ("完整流程 (Scan -> TF-IDF -> Report -> Scoring)", WorkflowManager.Feature7_FullFlow) },
-            { "8", ("获取风格词前缀（只读）", WorkflowManager.Feature8_ExtractStyleWords) },
+            { "8", ("获取风格词前缀（只读）【已完成】【目前核心功能】", WorkflowManager.Feature8_ExtractStyleWords) },
         };
 
         public static async Task Main(string[] args)

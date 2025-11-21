@@ -23,7 +23,7 @@ namespace ImageAnalyzerCore
         /// </summary>
         public static async void Feature1_ScanAndReport()
         {
-            WriteLine("\n[INFO] >>> 1. 仅扫描生成表格（只读） <<<");
+            WriteLine("\n[INFO] >>> 1. 仅扫描生成表格（只读）【未！！！完成】 <<<");
             var imageData = ScanImages();
             if (!imageData.Any()) return;
 
@@ -37,7 +37,7 @@ namespace ImageAnalyzerCore
         /// </summary>
         public static async void Feature2_Archive()
         {
-            WriteLine("\n[INFO] >>> 2. 仅归档到历史文件夹（移动） <<<");
+            WriteLine("\n[INFO] >>> 2. 仅归档到历史文件夹（移动）【已实现】【单文件】 <<<");
             var archiver = new FileArchiver();
             archiver.ExecuteArchiving();
         }
@@ -132,7 +132,7 @@ namespace ImageAnalyzerCore
         }
 
         /// <summary>
-        /// 功能8: 获取风格词前缀（只读）
+        /// 功能8: 获取风格词前缀（只读）【已完成】【目前核心功能】
         /// 直接去掉"1girl"及其后面的所有词，出表格
         /// 然后使用USELESS_STYLE_WORD_SUFFIXES.txt进行二次清洗
         /// </summary>
