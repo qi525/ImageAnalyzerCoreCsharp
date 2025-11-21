@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading;
 using static System.Console;
 
@@ -131,124 +132,86 @@ namespace ImageAnalyzerCore
         }
 
         /// <summary>
-        /// 功能8: 提取风格词
+        /// 功能8: 获取风格词前缀（只读）
+        /// 直接去掉"1girl"及其后面的所有词，出表格
+        /// 然后使用USELESS_STYLE_WORD_SUFFIXES.txt进行二次清洗
         /// </summary>
         public static async void Feature8_ExtractStyleWords()
         {
-            WriteLine("\n[INFO] >>> 8. 提取风格词 <<<");
             var imageData = ScanImages();
             if (!imageData.Any()) return;
 
-            var styleWords = ImageScanner.ExtractStyleWords(imageData, occurrenceThreshold: 10, minStyleWordLength: 30);
-            
-            if (styleWords.Count == 0)
+            string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+            var styleWords = new Dictionary<string, int>();
+
+            // 逐行处理：去掉"1girl"及其后面的所有词
+            foreach (var info in imageData)
             {
-                WriteLine("[INFO] 未检测到高频风格词。");
-                return;
+                if (string.IsNullOrWhiteSpace(info.CleanedTags)) continue;
+
+                int idx = info.CleanedTags.ToLower().IndexOf("1girl");
+                if (idx > 0)
+                {
+                    string word = info.CleanedTags.Substring(0, idx).ToLower();
+                    if (!string.IsNullOrWhiteSpace(word) && word.Length >= 30)
+                    {
+                        if (styleWords.ContainsKey(word))
+                            styleWords[word]++;
+                        else
+                            styleWords[word] = 1;
+                    }
+                }
             }
 
-            WriteLine($"\n✓ 成功提取 {styleWords.Count} 个高频风格词");
-            int index = 1;
+            // 筛选出现10次以上的
+            styleWords = styleWords.Where(kv => kv.Value >= 10).ToDictionary(kv => kv.Key, kv => kv.Value);
+            if (styleWords.Count == 0) return;
+
+            // 导出步骤1
+            string path1 = Path.Combine(ExcelDirectory, $"风格词前缀_1.原始_{timestamp}.xlsx");
+            if (ImageScanner.ExportStyleWordsToExcel(styleWords, path1))
+                OpenFile(path1);
+
+            // 步骤2: 二次清洗 - 使用USELESS_STYLE_WORD_SUFFIXES.txt
+            var suffixes = LoadUselessSuffixes();
+            var cleaned = new Dictionary<string, int>();
+
             foreach (var kv in styleWords)
             {
-                WriteLine($"{index}. 频率: {kv.Value:D2} 次 | 内容: {kv.Key}");
-                index++;
-            }
-
-            string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-            string excelPath = Path.Combine(ExcelDirectory, $"风格词统计_{timestamp}.xlsx");
-            
-            if (ImageScanner.ExportStyleWordsToExcel(styleWords, excelPath))
-            {
-                WriteLine($"[SUCCESS] 风格词Excel已保存: {excelPath}");
-                OpenFile(excelPath);
-            }
-
-            // ========== 二次清洗步骤（可选） ==========
-            WriteLine("\n[INFO] 是否执行二次清洗？(y/n) [默认: n]");
-            string cleanChoice = ReadLine()?.Trim().ToLower() ?? "n";
-            
-            if (cleanChoice == "y")
-            {
-                WriteLine("\n[INFO] 执行二次清洗：移除无用词汇...");
+                string word = kv.Key;
                 
-                // 从外部txt文件读取无用词汇清单
-                var uselessSuffixes = LoadUselessSuffixes();
-
-                if (uselessSuffixes.Count == 0)
+                // 逐个移除无用词汇后缀
+                foreach (var suffix in suffixes)
                 {
-                    WriteLine("[WARNING] 无法加载无用词汇清单，跳过二次清洗。");
-                    return;
-                }
-
-                WriteLine($"[INFO] 已加载 {uselessSuffixes.Count} 个无用词汇后缀。");
-
-                // 对风格词进行清洗
-                var cleanedStyleWords = new Dictionary<string, int>();
-                foreach (var kv in styleWords)
-                {
-                    string cleanedWord = kv.Key;
-                    
-                    // 逐一尝试移除无用后缀
-                    foreach (var suffix in uselessSuffixes)
+                    if (!string.IsNullOrWhiteSpace(suffix))
                     {
-                        if (cleanedWord.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
-                        {
-                            cleanedWord = cleanedWord.Substring(0, cleanedWord.Length - suffix.Length).Trim();
-                            cleanedWord = cleanedWord.TrimEnd(',', ' ');
-                            break;
-                        }
-                    }
-
-                    // 只记录清洗后长度足够的词
-                    if (!string.IsNullOrWhiteSpace(cleanedWord) && cleanedWord.Length >= 30)
-                    {
-                        cleanedWord = cleanedWord.ToLower();
-                        
-                        if (cleanedStyleWords.ContainsKey(cleanedWord))
-                        {
-                            cleanedStyleWords[cleanedWord] += kv.Value;
-                        }
-                        else
-                        {
-                            cleanedStyleWords[cleanedWord] = kv.Value;
-                        }
+                        word = Regex.Replace(word, Regex.Escape(suffix.Trim()), "", RegexOptions.IgnoreCase);
                     }
                 }
 
-                if (cleanedStyleWords.Count == 0)
+                word = word.Trim();
+                if (!string.IsNullOrWhiteSpace(word))
                 {
-                    WriteLine("[INFO] 清洗后未检测到高频风格词。");
-                    return;
-                }
-
-                // 按频率排序后输出
-                var sortedCleanedWords = cleanedStyleWords
-                    .OrderByDescending(kv => kv.Value)
-                    .ToDictionary(kv => kv.Key, kv => kv.Value);
-
-                WriteLine($"\n✓ 清洗后提取 {sortedCleanedWords.Count} 个高频风格词");
-                int cleanIndex = 1;
-                foreach (var kv in sortedCleanedWords)
-                {
-                    WriteLine($"{cleanIndex}. 频率: {kv.Value:D2} 次 | 内容: {kv.Key}");
-                    cleanIndex++;
-                }
-
-                // 保存清洗版Excel
-                string cleanedTimestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-                string cleanedExcelPath = Path.Combine(ExcelDirectory, $"风格词统计_清洗版_{cleanedTimestamp}.xlsx");
-                
-                if (ImageScanner.ExportStyleWordsToExcel(sortedCleanedWords, cleanedExcelPath))
-                {
-                    WriteLine($"[SUCCESS] 清洗版风格词Excel已保存: {cleanedExcelPath}");
-                    OpenFile(cleanedExcelPath);
+                    if (cleaned.ContainsKey(word))
+                        cleaned[word] += kv.Value;
+                    else
+                        cleaned[word] = kv.Value;
                 }
             }
+
+            if (cleaned.Count == 0) return;
+
+            // 重新排序
+            cleaned = cleaned.OrderByDescending(kv => kv.Value).ToDictionary(kv => kv.Key, kv => kv.Value);
+
+            // 导出步骤2
+            string path2 = Path.Combine(ExcelDirectory, $"风格词前缀_2.清洗后_{timestamp}.xlsx");
+            if (ImageScanner.ExportStyleWordsToExcel(cleaned, path2))
+                OpenFile(path2);
         }
 
         /// <summary>
-        /// 加载无用词汇后缀清单（从外部txt文件）。
+        /// 加载无用词汇清单（跳过注释和空行）
         /// </summary>
         private static List<string> LoadUselessSuffixes()
         {
@@ -262,14 +225,8 @@ namespace ImageAnalyzerCore
                 {
                     var lines = File.ReadAllLines(resourcePath);
                     suffixes = lines
-                        .Where(line => !string.IsNullOrWhiteSpace(line) && !line.StartsWith("#"))
+                        .Where(line => !string.IsNullOrWhiteSpace(line) && !line.TrimStart().StartsWith("#"))
                         .ToList();
-                    
-                    WriteLine($"[INFO] 已从 {resourcePath} 加载无用词汇清单。");
-                }
-                else
-                {
-                    WriteLine($"[WARNING] 无用词汇清单文件不存在: {resourcePath}");
                 }
             }
             catch (Exception ex)
@@ -280,52 +237,6 @@ namespace ImageAnalyzerCore
             return suffixes;
         }
 
-        /// <summary>
-        /// 功能9: 提取纯核心词
-        /// </summary>
-        public static async void Feature9_ExtractCoreWords()
-        {
-            WriteLine("\n[INFO] >>> 9. 提取纯核心词 <<<");
-            var imageData = ScanImages();
-            if (!imageData.Any()) return;
-
-            WriteLine("\n[INFO] 提取风格词...");
-            var styleWords = ImageScanner.ExtractStyleWords(imageData, occurrenceThreshold: 10, minStyleWordLength: 30);
-
-            WriteLine("[INFO] 提取纯核心词...\n");
-            int coreWordsCount = 0;
-
-            ProgressBarHelper.RunCoreWordsProgress(ctx =>
-            {
-                var task = ctx.AddTask("[cyan]提取核心词[/]", maxValue: imageData.Count);
-                for (int i = 0; i < imageData.Count; i++)
-                {
-                    var info = imageData[i];
-                    if (!string.IsNullOrWhiteSpace(info.CleanedTags))
-                    {
-                        string coreWordsOnly = ImageScanner.ExtractCoreWordsOnly(info.CleanedTags, styleWords);
-                        if (!string.IsNullOrWhiteSpace(coreWordsOnly))
-                        {
-                            info.CoreKeywords = coreWordsOnly;
-                            Interlocked.Increment(ref coreWordsCount);
-                        }
-                    }
-                    task.Value = i + 1;
-                }
-                task.StopTask();
-            });
-
-            WriteLine($"\n--- 统计 ---");
-            WriteLine($"总数: {imageData.Count} | 成功: {coreWordsCount}");
-
-            string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-            string excelPath = Path.Combine(ExcelDirectory, $"C#版图片信息报告_{timestamp}.xlsx");
-            if (ExcelReportGenerator.CreateExcelReport(imageData, excelPath))
-            {
-                WriteLine($"[SUCCESS] 报告已保存: {excelPath}");
-                OpenFile(excelPath);
-            }
-        }
 
         // ========== 辅助方法 ==========
         

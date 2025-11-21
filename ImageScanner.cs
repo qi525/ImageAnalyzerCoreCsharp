@@ -397,151 +397,6 @@ namespace ImageAnalyzerCore
         }
 
         /// <summary>
-        /// 【功能8】提取风格词：根据"1girl"的位置，提取前面的词语（风格词）。
-        /// 如果同一个风格词出现超过指定阈值，则将其缓存为默认风格词。
-        /// 根据长度从长到短进行排序。
-        /// </summary>
-        public static Dictionary<string, int> ExtractStyleWords(List<ImageInfo> imageData, int occurrenceThreshold = 10, int minStyleWordLength = 30)
-        {
-            var styleWordFrequency = new Dictionary<string, int>();
-
-            if (imageData == null || imageData.Count == 0)
-            {
-                WriteLine("[INFO] 没有图片数据，无法提取风格词。");
-                return styleWordFrequency;
-            }
-
-            WriteLine($"\n[INFO] >>> 8. 开始提取风格词（阈值：出现 {occurrenceThreshold}+ 次，最小长度：{minStyleWordLength} 字符） <<<");
-
-            // 遍历所有图片的清洗后的标签
-            foreach (var info in imageData)
-            {
-                if (string.IsNullOrWhiteSpace(info.CleanedTags))
-                {
-                    continue;
-                }
-
-                // 寻找 "1girl" 的位置
-                string lowerTags = info.CleanedTags.ToLower();
-                int index = lowerTags.IndexOf("1girl", StringComparison.OrdinalIgnoreCase);
-
-                if (index > 0)
-                {
-                    // 提取 "1girl" 之前的部分
-                    string styleWord = info.CleanedTags.Substring(0, index).Trim();
-
-                    // 移除末尾的逗号
-                    styleWord = styleWord.TrimEnd(',', ' ');
-
-                    // 只有当风格词长度足够长时才记录
-                    if (!string.IsNullOrWhiteSpace(styleWord) && styleWord.Length >= minStyleWordLength)
-                    {
-                        styleWord = styleWord.ToLower(); // 标准化为小写
-
-                        if (styleWordFrequency.ContainsKey(styleWord))
-                        {
-                            styleWordFrequency[styleWord]++;
-                        }
-                        else
-                        {
-                            styleWordFrequency[styleWord] = 1;
-                        }
-                    }
-                }
-            }
-
-            // 筛选出现次数超过阈值的风格词
-            var frequentStyleWords = styleWordFrequency
-                .Where(kv => kv.Value >= occurrenceThreshold)
-                .OrderByDescending(kv => kv.Key.Length) // 按长度从长到短排序
-                .ThenByDescending(kv => kv.Value) // 长度相同时按频率从高到低排序
-                .ToDictionary(kv => kv.Key, kv => kv.Value);
-
-            // 输出统计信息
-            WriteLine($"\n--- 风格词提取统计 ---");
-            WriteLine($"扫描图片总数: {imageData.Count}");
-            WriteLine($"提取的风格词总数: {styleWordFrequency.Count}");
-            WriteLine($"高频风格词数（出现 {occurrenceThreshold}+ 次）: {frequentStyleWords.Count}");
-
-            if (frequentStyleWords.Count > 0)
-            {
-                WriteLine($"\n检测到的高频风格词（按长度和频率排序）:");
-                int count = 1;
-                foreach (var kv in frequentStyleWords)
-                {
-                    WriteLine($"  {count}. [{kv.Value}次] {kv.Key}");
-                    count++;
-                }
-            }
-            else
-            {
-                WriteLine("[INFO] 未检测到高频风格词。");
-            }
-
-            return frequentStyleWords;
-        }
-
-        /// <summary>
-        /// 【功能9】利用功能8的风格词，从文件名或标签中移除风格词，提取纯净的核心关键词。
-        /// 该方法接收功能8的风格词字典，逐一移除，直到无法匹配为止。
-        /// </summary>
-        public static string ExtractCoreWordsOnly(string tags, Dictionary<string, int> styleWords)
-        {
-            if (string.IsNullOrWhiteSpace(tags))
-            {
-                return string.Empty;
-            }
-
-            if (styleWords == null || styleWords.Count == 0)
-            {
-                WriteLine("[WARNING] 未提供风格词，使用原始标签清洗逻辑。");
-                return ExtractCoreKeywords(tags);
-            }
-
-            // 从小写的标签开始处理
-            string cleaned = tags.ToLower();
-
-            // 按长度从长到短的顺序移除风格词
-            // 这样可以避免短风格词先被匹配导致长风格词无法被正确移除
-            var sortedStyleWords = styleWords.Keys
-                .OrderByDescending(w => w.Length)
-                .ToList();
-
-            foreach (var styleWord in sortedStyleWords)
-            {
-                // 持续移除该风格词，直到无法再找到为止
-                while (cleaned.Contains(styleWord, StringComparison.OrdinalIgnoreCase))
-                {
-                    // 使用不区分大小写的替换
-                    cleaned = Regex.Replace(cleaned, Regex.Escape(styleWord), "", RegexOptions.IgnoreCase);
-                }
-            }
-
-            // 应用与功能1相同的清洗逻辑
-            // 1. 移除 (tag) 和 :1.2 权重
-            cleaned = Regex.Replace(cleaned, @"(\s*\(\s*[^\)]+\s*\))|(\s*:\d+(\.\d+)?\s*)", "", RegexOptions.None);
-            
-            // 2. 标准化逗号和空格
-            cleaned = Regex.Replace(cleaned, @",\s*,\s*", ", ", RegexOptions.None);
-            cleaned = cleaned.TrimStart(',', ' ').TrimEnd(',', ' ');
-            
-            // 3. 移除多余的停用词
-            if (AnalyzerConfig.PositivePromptStopWords != null)
-            {
-                foreach (var stopWordGroup in AnalyzerConfig.PositivePromptStopWords)
-                {
-                    cleaned = Regex.Replace(cleaned, Regex.Escape(stopWordGroup.ToLower().Trim()), "", RegexOptions.IgnoreCase);
-                }
-            }
-
-            // 4. 最后再次标准化
-            cleaned = Regex.Replace(cleaned, @",\s*,\s*", ", ", RegexOptions.None);
-            cleaned = cleaned.TrimStart(',', ' ').TrimEnd(',', ' ');
-
-            return cleaned;
-        }
-
-        /// <summary>
         /// 将风格词字典导出到Excel文件。
         /// </summary>
         public static bool ExportStyleWordsToExcel(Dictionary<string, int> styleWords, string excelPath)
@@ -558,10 +413,11 @@ namespace ImageAnalyzerCore
                 {
                     var worksheet = workbook.Worksheets.Add("风格词统计");
 
-                    // 设置表头（新增第三列：风格词长度）
+                    // 设置表头
                     worksheet.Cell(1, 1).Value = "风格词";
                     worksheet.Cell(1, 2).Value = "出现次数";
                     worksheet.Cell(1, 3).Value = "风格词长度";
+                    worksheet.Cell(1, 4).Value = "最后5个字符";
 
                     // 设置表头格式
                     var headerRow = worksheet.Row(1);
@@ -574,13 +430,16 @@ namespace ImageAnalyzerCore
                         .OrderByDescending(kv => kv.Value)
                         .ToList();
 
-                    // 填充数据（第三列为风格词长度）
+                    // 填充数据
                     int row = 2;
                     foreach (var kv in sortedStyleWords)
                     {
                         worksheet.Cell(row, 1).Value = kv.Key;
                         worksheet.Cell(row, 2).Value = kv.Value;
                         worksheet.Cell(row, 3).Value = kv.Key?.Length ?? 0;
+                        // 最后5个字符
+                        string last5 = kv.Key?.Length >= 5 ? kv.Key.Substring(kv.Key.Length - 5) : kv.Key ?? string.Empty;
+                        worksheet.Cell(row, 4).Value = last5;
                         row++;
                     }
 
@@ -588,6 +447,7 @@ namespace ImageAnalyzerCore
                     worksheet.Column(1).Width = 80; // 风格词列
                     worksheet.Column(2).Width = 15; // 次数列
                     worksheet.Column(3).Width = 12; // 长度列
+                    worksheet.Column(4).Width = 15; // 最后5个字符列
 
                     // 冻结表头
                     worksheet.SheetView.FreezeRows(1);
